@@ -53,6 +53,12 @@
 
 ### 2.2 界面概览
 
+![图片](https://github.com/user-attachments/assets/ba72fdb5-5edc-4305-ae1a-5dc307f5af29)
+
+![图片](https://github.com/user-attachments/assets/8b74ee9e-66b6-4c16-b7ff-a1a2c71f39a5)
+
+![图片](https://github.com/user-attachments/assets/0e03c1f7-3346-43d0-a86e-f1ea850d3c59)
+
 ![界面示意图]
 ```
 左侧面板：
