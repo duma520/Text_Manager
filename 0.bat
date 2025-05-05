@@ -1,0 +1,1 @@
+pyinstaller --windowed  --noconfirm  --icon=icon.ico --add-data "icon.ico;." Text_Manager.py
