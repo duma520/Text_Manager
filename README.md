@@ -1,4 +1,5 @@
-![image](https://github.com/user-attachments/assets/9bfcf655-be24-459b-97cb-793067f7aa96)
+![image](https://github.com/user-attachments/assets/1ad128c5-ce19-41f5-a01a-930e0d460079)
+
 
 # 高级文本管理工具 - 全方位使用说明书
 
