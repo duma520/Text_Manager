@@ -1,4 +1,4 @@
-__version__ = "6.15.0"
+__version__ = "6.14.0"
 __build_date__ = "2025-05-14"
 __author__ = "杜玛"
 __license__ = "MIT"
