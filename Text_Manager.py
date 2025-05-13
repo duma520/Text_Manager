@@ -1,4 +1,4 @@
-__version__ = "6.21.0"
+__version__ = "6.33.0"
 __build_date__ = "2025-05-14"
 __author__ = "杜玛"
 __license__ = "MIT"
@@ -12,25 +12,29 @@ import datetime
 import time
 import markdown
 import os
+import math
 from pypinyin import lazy_pinyin
+# 布局类
+from PyQt5.QtWidgets import QVBoxLayout, QHBoxLayout, QGridLayout, QFormLayout
+# 控件类
 from PyQt5.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QLineEdit, QTextEdit, QPushButton, QListWidget,
-    QMessageBox, QComboBox, QStatusBar, QTabWidget, QFileDialog,
-    QTreeWidget, QTreeWidgetItem, QInputDialog, QAction, QMenu, QScrollArea,
-    QShortcut, QDialog, QDialogButtonBox, QFormLayout, QCheckBox, QSpinBox,
-    QDateEdit, QGroupBox, QListWidgetItem, QToolBar, QFontComboBox, QToolButton,
-    QButtonGroup
+    QApplication, QMainWindow, QWidget, QLabel, QLineEdit, 
+    QTextEdit, QPushButton, QListWidget, QMessageBox, QComboBox,
+    QStatusBar, QTabWidget, QFileDialog, QTreeWidget, QTreeWidgetItem,
+    QInputDialog, QAction, QMenu, QScrollArea, QShortcut, QDialog,
+    QDialogButtonBox, QCheckBox, QSpinBox, QDateEdit, QGroupBox,
+    QListWidgetItem, QToolBar, QFontComboBox, QToolButton, QButtonGroup,
+    QTableWidget, QTableWidgetItem, QHeaderView, QProgressBar
 )
 from PyQt5.QtCore import Qt, QSize, QTimer, QDate, QMimeData
-from PyQt5.QtGui import QFont, QIcon, QTextCursor, QKeySequence
+from PyQt5.QtGui import QFont, QIcon, QTextCursor, QKeySequence, QPainter, QColor
 from PyQt5.QtChart import QChart, QPieSeries, QChartView
 
 
 class TextManager(QMainWindow):
     def __init__(self):
         super().__init__()
-        title = f"高级文本管理工具 v{__version__} (Build {__build_date__}) | {__author__} | {__license__}"
+        title = f"高级文本管理工具 v{__version__} (Build {__build_date__}) "
         self.setWindowTitle(title)
         self.setWindowIcon(QIcon('icon.ico'))
         
@@ -212,7 +216,9 @@ class TextManager(QMainWindow):
                 font-family: 'Segoe UI', 'Microsoft YaHei';
                 font-size: 13px;
             }
-            
+
+
+
             /* ========== 功能按钮色彩系统 ========== */
             /* 主操作按钮基础样式 */
             QPushButton {
@@ -487,6 +493,27 @@ class TextManager(QMainWindow):
             QMessageBox.warning(self, "警告", "请先选择要分析的文本!")
             return
         
+        # 获取当前文本格式
+        format_index = self.format_combo.currentIndex()
+        
+        # 根据格式获取内容
+        try:
+            if format_index == 0:  # 纯文本
+                content = self.content_input.toPlainText()
+            elif format_index == 1:  # Markdown
+                content = self.content_input.toPlainText()
+            else:  # HTML
+                # 确保获取纯文本内容进行分析
+                content = self.wysiwyg_editor.toPlainText() if self.wysiwyg_editor.isVisible() else self.content_input.toPlainText()
+            
+            # 确保内容不为空
+            if not content.strip():
+                QMessageBox.warning(self, "警告", "当前文本内容为空!")
+                return
+        except Exception as e:
+            QMessageBox.warning(self, "错误", f"获取文本内容失败: {str(e)}")
+            return
+
         dialog = QDialog(self)
         dialog.setWindowTitle("文本分析")
         dialog.resize(800, 600)
@@ -499,6 +526,11 @@ class TextManager(QMainWindow):
         stats_tab = QWidget()
         stats_layout = QVBoxLayout()
         
+        # 添加更多统计信息
+        self.stats_info = QTextEdit()
+        self.stats_info.setReadOnly(True)
+        stats_layout.addWidget(self.stats_info)
+        
         # 字数统计图表
         self.stats_chart_view = QChartView()
         stats_layout.addWidget(self.stats_chart_view)
@@ -507,77 +539,414 @@ class TextManager(QMainWindow):
         self.keywords_label = QLabel("关键词: ")
         stats_layout.addWidget(self.keywords_label)
         
+        # 添加段落统计
+        self.paragraph_stats = QLabel("段落统计: ")
+        stats_layout.addWidget(self.paragraph_stats)
+        
         stats_tab.setLayout(stats_layout)
         tab_widget.addTab(stats_tab, "基本统计")
         
-        # 2. 相似文本选项卡
+        # 2. 相似文本选项卡 (增强版)
         similar_tab = QWidget()
         similar_layout = QVBoxLayout()
         
+        # 相似度分析说明
+        similarity_desc = QLabel("基于以下特征计算相似度:")
+        similar_layout.addWidget(similarity_desc)
+        
+        # 相似度特征表格
+        self.similarity_table = QTableWidget()
+        self.similarity_table.setColumnCount(3)
+        self.similarity_table.setHorizontalHeaderLabels(["特征", "权重", "贡献值"])
+        self.similarity_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        similar_layout.addWidget(self.similarity_table)
+        
+        # 相似文本列表 (增强)
         self.similar_texts_list = QListWidget()
+        self.similar_texts_list.setStyleSheet("""
+            QListWidget::item {
+                border-bottom: 1px solid #eee;
+                padding: 8px;
+            }
+            QListWidget::item:hover {
+                background: #f5f5f5;
+            }
+        """)
+        self.similar_texts_list.itemClicked.connect(self.show_similarity_detail)
+        similar_layout.addWidget(QLabel("最相似的5篇文本:"))
         similar_layout.addWidget(self.similar_texts_list)
+        
+        # 相似度详情面板
+        self.similarity_detail = QTextEdit()
+        self.similarity_detail.setReadOnly(True)
+        self.similarity_detail.setFixedHeight(150)
+        similar_layout.addWidget(QLabel("相似度分析详情:"))
+        similar_layout.addWidget(self.similarity_detail)
         
         similar_tab.setLayout(similar_layout)
         tab_widget.addTab(similar_tab, "相似文本")
+
+        # 3. 文本特征选项卡 (增强版)
+        features_tab = QWidget()
+        features_layout = QVBoxLayout()
         
+        # 特征概览卡片
+        features_group = QGroupBox("文本特征概览")
+        features_grid = QGridLayout()
+        
+        # 1. 可读性卡片
+        readability_card = QGroupBox("📖 可读性")
+        readability_layout = QVBoxLayout()
+        self.readability_score = QLabel("正在计算...")
+        self.readability_bar = QProgressBar()
+        self.readability_bar.setTextVisible(False)
+        self.readability_bar.setStyleSheet("""
+            QProgressBar {
+                border: 1px solid #ddd;
+                border-radius: 3px;
+                height: 10px;
+            }
+            QProgressBar::chunk {
+                background: #4CAF50;
+            }
+        """)
+        readability_layout.addWidget(self.readability_score)
+        readability_layout.addWidget(self.readability_bar)
+        readability_card.setLayout(readability_layout)
+        
+        # 2. 情感分析卡片
+        sentiment_card = QGroupBox("😊 情感倾向")
+        sentiment_layout = QVBoxLayout()
+        self.sentiment_label = QLabel("正在分析...")
+        self.sentiment_graph = QLabel()
+        self.sentiment_graph.setFixedHeight(30)
+        sentiment_layout.addWidget(self.sentiment_label)
+        sentiment_layout.addWidget(self.sentiment_graph)
+        sentiment_card.setLayout(sentiment_layout)
+        
+        # 3. 关键词卡片
+        keywords_card = QGroupBox("🔑 关键词云")
+        keywords_layout = QVBoxLayout()
+        self.keywords_label = QLabel()
+        self.keywords_label.setWordWrap(True)
+        keywords_layout.addWidget(self.keywords_label)
+        keywords_card.setLayout(keywords_layout)
+        
+        # 4. 风格特征卡片
+        style_card = QGroupBox("✍️ 写作风格")
+        style_layout = QVBoxLayout()
+        self.style_label = QLabel("正在分析...")
+        style_layout.addWidget(self.style_label)
+        style_card.setLayout(style_layout)
+        
+        # 添加到网格
+        features_grid.addWidget(readability_card, 0, 0)
+        features_grid.addWidget(sentiment_card, 0, 1)
+        features_grid.addWidget(keywords_card, 1, 0)
+        features_grid.addWidget(style_card, 1, 1)
+        features_group.setLayout(features_grid)
+        features_layout.addWidget(features_group)
+        
+        # 详细特征表格
+        self.features_table = QTableWidget()
+        self.features_table.setColumnCount(3)
+        self.features_table.setHorizontalHeaderLabels(["特征类型", "特征值", "说明"])
+        self.features_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        features_layout.addWidget(self.features_table)
+        
+        features_tab.setLayout(features_layout)
+        tab_widget.addTab(features_tab, "文本特征")
+
+        # 将选项卡添加到对话框布局
         layout.addWidget(tab_widget)
         
         # 分析按钮
         analyze_btn = QPushButton("开始分析")
-        analyze_btn.clicked.connect(lambda: self.analyze_text(dialog))
+        analyze_btn.clicked.connect(lambda: self.analyze_text(dialog, content))
         layout.addWidget(analyze_btn)
         
         dialog.setLayout(layout)
+
+        # 创建后立即执行分析
+        self.analyze_text(dialog, content)
+        
         dialog.exec_()
 
-    def analyze_text(self, dialog):
+
+    def analyze_text(self, dialog, content):
         """执行文本分析"""
+        print("[DEBUG] 开始文本分析")
         try:
-            # 获取当前文本内容
-            content = self.content_input.toPlainText()
+            # 1. 初始化统计信息文本框
+            self.stats_info.clear()  # 先清空内容
+            print("[DEBUG] 初始化统计信息文本框")
             
-            # 1. 基本统计
+            # 2. 基本统计
             self.update_basic_stats(content)
+            print("[DEBUG] 基本统计信息更新")
             
-            # 2. 关键词提取
+            # 3. 关键词提取
             keywords = self.extract_keywords(content)
             self.keywords_label.setText(f"关键词: {', '.join(keywords)}")
+            print("[DEBUG] 关键词提取:", keywords)
             
-            # 3. 查找相似文本
+            # 4. 查找相似文本
             self.find_similar_texts(content)
             
+            # 5. 新增段落统计
+            paragraph_count = len([p for p in content.split('\n') if p.strip()])
+            self.paragraph_stats.setText(f"段落统计: {paragraph_count}段")
+            print("[DEBUG] 段落统计:", paragraph_count)
+            
+            # 6. 完整版可读性评分计算 (Flesch Reading Ease + 中文适配)
+            # 英文部分计算 (Flesch Reading Ease)
+            english_words = re.findall(r'\b[a-zA-Z]+\b', content)
+            english_sentences = re.findall(r'[.!?]+', content)
+            
+            flesch_score = 0
+            if english_words and english_sentences:
+                avg_words_per_sentence = len(english_words) / len(english_sentences)
+                avg_syllables_per_word = sum(len(re.findall(r'[aeiouyAEIOUY]+', word)) for word in english_words) / len(english_words)
+                flesch_score = 206.835 - (1.015 * avg_words_per_sentence) - (84.6 * avg_syllables_per_word)
+            
+            # 中文部分计算 (基于平均句长和词汇难度)
+            chinese_chars = re.findall(r'[\u4e00-\u9fff]', content)
+            chinese_sentences = re.split(r'[。！？；;]+', content)
+            chinese_sentences = [s for s in chinese_sentences if s.strip()]
+            
+            chinese_score = 0
+            if chinese_chars and chinese_sentences:
+                avg_chars_per_sentence = len(chinese_chars) / len(chinese_sentences)
+                # 中文可读性经验公式 (基于句长和常用词比例)
+                common_word_ratio = len(re.findall(r'[的了是在有这我你他我们他们]', content)) / len(chinese_chars)
+                chinese_score = 100 - (avg_chars_per_sentence * 0.5) + (common_word_ratio * 20)
+            
+            # 综合评分 (根据中英文内容比例)
+            total_chars = len(content)
+            if total_chars > 0:
+                english_ratio = len(''.join(english_words)) / total_chars
+                chinese_ratio = len(''.join(chinese_chars)) / total_chars
+                readability = (flesch_score * english_ratio + chinese_score * chinese_ratio)
+                readability = max(0, min(100, readability))  # 限制在0-100范围内
+                
+                # 评分描述
+                if readability >= 90:
+                    level = "非常容易"
+                elif readability >= 80:
+                    level = "容易" 
+                elif readability >= 70:
+                    level = "较容易"
+                elif readability >= 60:
+                    level = "标准"
+                elif readability >= 50:
+                    level = "较难"
+                else:
+                    level = "困难"
+                
+                self.readability_score.setText(
+                    f"可读性评分: {readability:.1f}/100 ({level})\n"
+                    f"英文部分: {flesch_score:.1f} 中文部分: {chinese_score:.1f}"
+                )
+            else:
+                self.readability_score.setText("可读性评分: 无有效内容")
+            
+            print(f"[DEBUG] 可读性评分: {readability:.1f} (英文:{flesch_score:.1f} 中文:{chinese_score:.1f})")
+
+            
+            # 7. 完整版情感分析 (支持中英文混合+程度分析)
+            # 扩展的情感词典 (包含程度词和否定词处理)
+            sentiment_dict = {
+                # 中文情感词 (带权重)
+                'positive': {
+                    '好': 1, '优秀': 2, '成功': 2, '高兴': 1.5, '满意': 1.5,
+                    '喜欢': 1, '爱': 2, '开心': 1.5, '幸福': 2, '棒': 1,
+                    '完美': 2, '精彩': 1.5, '美丽': 1, '聪明': 1, '强大': 1
+                },
+                'negative': {
+                    '坏': 1, '差': 1, '失败': 2, '伤心': 1.5, '不满': 1.5,
+                    '讨厌': 1.5, '恨': 2, '痛苦': 2, '糟糕': 1.5, '愚蠢': 1.5,
+                    '难看': 1, '弱': 1, '困难': 1, '麻烦': 1, '失望': 1.5
+                },
+                # 英文情感词
+                'en_positive': {
+                    'good': 1, 'excellent': 2, 'success': 2, 'happy': 1.5, 'satisfied': 1.5,
+                    'like': 1, 'love': 2, 'joy': 1.5, 'great': 1.5, 'perfect': 2
+                },
+                'en_negative': {
+                    'bad': 1, 'poor': 1, 'fail': 2, 'sad': 1.5, 'angry': 1.5,
+                    'hate': 2, 'pain': 2, 'terrible': 1.5, 'stupid': 1.5, 'ugly': 1
+                },
+                # 程度副词
+                'intensifiers': {
+                    '非常': 1.5, '特别': 1.5, '极其': 2, '十分': 1.3, '相当': 1.2,
+                    '有点': 0.8, '稍微': 0.7, '略微': 0.7, '过于': 1.3,
+                    'very': 1.5, 'extremely': 2, 'highly': 1.5, 'quite': 1.2
+                },
+                # 否定词
+                'negators': ['不', '没', '无', '非', '未', '不是', '不要', 'never', 'not', "n't"]
+            }
+
+            # 初始化计数器
+            positive_score = 0
+            negative_score = 0
+            sentiment_words = []
+            
+            # 预处理文本
+            sentences = re.split(r'[。！？；;.!?]+', content)
+            
+            for sentence in sentences:
+                if not sentence.strip():
+                    continue
+                
+                # 检查否定词
+                has_negator = any(neg in sentence for neg in sentiment_dict['negators'])
+                negator_factor = -1 if has_negator else 1
+                
+                # 检查程度词
+                intensifier = 1
+                for word, factor in sentiment_dict['intensifiers'].items():
+                    if word in sentence:
+                        intensifier *= factor
+                        break
+                
+                # 中文情感词分析
+                for word, weight in sentiment_dict['positive'].items():
+                    if word in sentence:
+                        score = weight * intensifier * negator_factor
+                        positive_score += max(0, score)
+                        negative_score += max(0, -score)
+                        sentiment_words.append((word, score))
+                
+                for word, weight in sentiment_dict['negative'].items():
+                    if word in sentence:
+                        score = weight * intensifier * negator_factor
+                        negative_score += max(0, score)
+                        positive_score += max(0, -score)
+                        sentiment_words.append((word, score))
+                
+                # 英文情感词分析
+                for word, weight in sentiment_dict['en_positive'].items():
+                    if re.search(r'\b' + word + r'\b', sentence, re.IGNORECASE):
+                        score = weight * intensifier * negator_factor
+                        positive_score += max(0, score)
+                        negative_score += max(0, -score)
+                        sentiment_words.append((word, score))
+                
+                for word, weight in sentiment_dict['en_negative'].items():
+                    if re.search(r'\b' + word + r'\b', sentence, re.IGNORECASE):
+                        score = weight * intensifier * negator_factor
+                        negative_score += max(0, score)
+                        positive_score += max(0, -score)
+                        sentiment_words.append((word, score))
+            
+            # 计算情感倾向
+            total_score = positive_score - negative_score
+            abs_total = abs(total_score)
+            
+            if abs_total < 1:
+                sentiment = "中性"
+                intensity = "一般"
+            else:
+                if total_score > 0:
+                    sentiment = "积极"
+                    intensity = "强烈" if abs_total > 3 else "中等" if abs_total > 1.5 else "轻微"
+                else:
+                    sentiment = "消极"
+                    intensity = "强烈" if abs_total > 3 else "中等" if abs_total > 1.5 else "轻微"
+            
+            # 生成详细报告
+            top_words = sorted(sentiment_words, key=lambda x: abs(x[1]), reverse=True)[:5]
+            word_details = "，".join(f"{word}({score:.1f})" for word, score in top_words)
+            
+            self.sentiment_label.setText(
+                f"情感倾向: {sentiment}-{intensity}\n"
+                f"正面强度: {positive_score:.1f} 负面强度: {negative_score:.1f}\n"
+                f"关键情感词: {word_details}"
+            )
+            
+            print(f"[DEBUG] 情感分析: {sentiment}-{intensity} (正:{positive_score:.1f} 负:{negative_score:.1f})")
+            print(f"[DEBUG] 情感词: {top_words}")
+
+
+            # 增强版特征分析
+            self.analyze_text_features(content)
+
+            # 更新统计信息文本框 - 使用HTML格式
+            stats_html = (
+                "<h3>详细统计信息:</h3>"
+                "<ul>"
+                "<li>总字符数: {}</li>"
+                "<li>中文字符: {}</li>"
+                "<li>英文单词: {}</li>"
+                "<li>数字数量: {}</li>"
+                "<li>标点符号: {}</li>"
+                "<li>空格数量: {}</li>"
+                "<li>换行数量: {}</li>"
+                "</ul>"
+            ).format(
+                len(content),
+                len(re.findall(r'[\u4e00-\u9fff]', content)),
+                len(re.findall(r'\b[a-zA-Z]+\b', content)),
+                len(re.findall(r'\d+', content)),
+                len(re.findall(r'[,.!?;:，。！？；：、]', content)),
+                content.count(' '),
+                content.count('\n')
+            )
+            self.stats_info.setHtml(stats_html)
+            
         except Exception as e:
-            print(dialog, "错误", f"分析失败: {str(e)}")
+            print("[ERROR] 文本分析失败:", str(e))
             QMessageBox.critical(dialog, "错误", f"分析失败: {str(e)}")
+
+
+
 
     def update_basic_stats(self, content):
         """更新基本统计图表"""
         # 计算统计数据
         chinese_chars = len(re.findall(r'[\u4e00-\u9fff]', content))
         english_words = len(re.findall(r'\b[a-zA-Z]+\b', content))
-        total_chars = len(content)
-        other_chars = total_chars - chinese_chars - english_words
+        numbers = len(re.findall(r'\d+', content))
+        punctuation = len(re.findall(r'[,.!?;:，。！？；：、]', content))
+        spaces = content.count(' ')
+        others = len(content) - chinese_chars - english_words - numbers - punctuation - spaces
         
         # 创建图表
         chart = QChart()
         chart.setTitle("文本统计")
+        chart.setAnimationOptions(QChart.SeriesAnimations)
         
         # 创建饼图系列
         series = QPieSeries()
         series.append("中文字符", chinese_chars)
         series.append("英文单词", english_words)
-        series.append("其他字符", other_chars)
+        series.append("数字", numbers)
+        series.append("标点符号", punctuation)
+        series.append("空格", spaces)
+        series.append("其他字符", others)
+        
+        # 设置切片标签可见
+        for slice in series.slices():
+            slice.setLabelVisible(True)
+            slice.setLabel(f"{slice.label()} ({slice.value()})")
         
         # 添加到图表
         chart.addSeries(series)
         chart.legend().setVisible(True)
+        chart.legend().setAlignment(Qt.AlignBottom)
         
         self.stats_chart_view.setChart(chart)
+        self.stats_chart_view.setRenderHint(QPainter.Antialiasing)
+
 
     def extract_keywords(self, content, top_n=10):
-        """提取关键词(简单实现)"""
-        # 中文分词 (实际应用中应使用jieba等分词库)
+        """提取关键词(改进版)"""
+        # 中文分词 (简化版，实际应用中应使用jieba等分词库)
         words = re.findall(r'[\u4e00-\u9fa5]{2,}', content)
+        
+        # 过滤停用词
+        stop_words = ['的', '了', '和', '是', '在', '我', '有', '这', '那', '你']
+        words = [word for word in words if word not in stop_words]
         
         # 统计词频
         word_counts = {}
@@ -587,36 +956,282 @@ class TextManager(QMainWindow):
         # 按频率排序
         sorted_words = sorted(word_counts.items(), key=lambda x: x[1], reverse=True)
         
+        # 计算TF-IDF简单版 (词频/文档频率)
+        doc_freq = {}
+        total_docs = 0
+        self.cursor.execute("SELECT COUNT(*) FROM texts")
+        total_docs = self.cursor.fetchone()[0]
+        
+        for word, _ in sorted_words[:top_n*2]:  # 检查前20个高频词
+            self.cursor.execute(
+                "SELECT COUNT(*) FROM texts WHERE content LIKE ?",
+                (f'%{word}%',)
+            )
+            doc_freq[word] = self.cursor.fetchone()[0]
+        
+        # 计算TF-IDF分数
+        keywords = []
+        for word, count in sorted_words[:top_n*2]:
+            tf = count / len(words) if words else 0
+            idf = math.log(total_docs / (doc_freq.get(word, 1) + 1)) if total_docs else 1
+            score = tf * idf
+            keywords.append((word, score))
+        
+        # 按TF-IDF分数排序
+        keywords.sort(key=lambda x: x[1], reverse=True)
+        
         # 返回前N个关键词
-        return [word for word, count in sorted_words[:top_n]]
+        return [word for word, score in keywords[:top_n]]
 
-    def find_similar_texts(self, current_content):
-        """查找相似文本(基于简单的内容相似度)"""
+
+    def find_similar_texts(self, content):
+        """增强版相似文本查找"""
         self.similar_texts_list.clear()
+        self.similarity_table.setRowCount(0)
         
         # 获取所有文本
-        self.cursor.execute("SELECT id, title, content FROM texts WHERE id != ?", (self.current_id,))
+        self.cursor.execute("SELECT id, title, content, category_id FROM texts WHERE id != ?", (self.current_id,))
         texts = self.cursor.fetchall()
+        
+        # 提取特征
+        current_features = self.extract_text_features(content)
         
         # 计算相似度
         similarities = []
-        current_words = set(re.findall(r'\w+', current_content.lower()))
-        
-        for text_id, title, content in texts:
-            text_words = set(re.findall(r'\w+', content.lower()))
-            common_words = current_words & text_words
-            similarity = len(common_words) / (len(current_words) + 0.001)  # 避免除零
+        for text_id, title, text, category_id in texts:
+            features = self.extract_text_features(text)
+            similarity = self.calculate_similarity(current_features, features)
             
-            similarities.append((text_id, title, similarity))
+            # 获取分类名
+            category_name = "未分类"
+            if category_id:
+                self.cursor.execute("SELECT name FROM categories WHERE id=?", (category_id,))
+                res = self.cursor.fetchone()
+                if res:
+                    category_name = res[0]
+            
+            similarities.append((text_id, title, category_name, similarity, features))
         
         # 按相似度排序
-        similarities.sort(key=lambda x: x[2], reverse=True)
+        similarities.sort(key=lambda x: x[3], reverse=True)
         
         # 显示前5个相似文本
-        for text_id, title, similarity in similarities[:5]:
-            item = QListWidgetItem(f"{title} (相似度: {similarity:.2%})")
-            item.setData(Qt.UserRole, text_id)
+        for i, (text_id, title, category, similarity, features) in enumerate(similarities[:5]):
+            item = QListWidgetItem()
+            widget = QWidget()
+            layout = QHBoxLayout()
+            
+            # 相似度进度条
+            sim_bar = QProgressBar()
+            sim_bar.setValue(int(similarity * 100))
+            sim_bar.setFormat(f"{similarity:.1%}")
+            sim_bar.setStyleSheet("""
+                QProgressBar {
+                    text-align: center;
+                    min-width: 80px;
+                }
+            """)
+            
+            # 文本信息
+            label = QLabel(f"{i+1}. {title} [{category}]")
+            label.setStyleSheet("font-weight: bold;")
+            
+            layout.addWidget(sim_bar)
+            layout.addWidget(label)
+            layout.addStretch()
+            widget.setLayout(layout)
+            
+            item.setSizeHint(widget.sizeHint())
+            item.setData(Qt.UserRole, (text_id, features))
             self.similar_texts_list.addItem(item)
+            self.similar_texts_list.setItemWidget(item, widget)
+        
+        # 显示特征权重表
+        self.show_feature_weights(current_features)
+
+    def extract_text_features(self, text):
+        """提取文本多维特征"""
+        features = {
+            # 词汇特征
+            'word_count': len(re.findall(r'\w+', text)),
+            'unique_words': len(set(re.findall(r'\w+', text))),
+            'lexical_diversity': len(set(re.findall(r'\w+', text))) / max(1, len(re.findall(r'\w+', text))),
+            
+            # 中文特征
+            'chinese_chars': len(re.findall(r'[\u4e00-\u9fff]', text)),
+            'chinese_ratio': len(re.findall(r'[\u4e00-\u9fff]', text)) / max(1, len(text)),
+            
+            # 英文特征
+            'english_words': len(re.findall(r'\b[a-zA-Z]+\b', text)),
+            'english_ratio': len(re.findall(r'\b[a-zA-Z]+\b', text)) / max(1, len(re.findall(r'\w+', text))),
+            
+            # 结构特征
+            'avg_sentence_length': len(re.findall(r'\w+', text)) / max(1, len(re.split(r'[。！？.!?]+', text))),
+            'paragraph_count': len([p for p in text.split('\n') if p.strip()]),
+            
+            # 内容特征
+            'question_ratio': len(re.findall(r'[？?]', text)) / max(1, len(re.findall(r'[。.！!？?]', text))),
+            'exclamation_ratio': len(re.findall(r'[！!]', text)) / max(1, len(re.findall(r'[。.！!？?]', text))),
+            
+            # 关键词特征
+            'keywords': self.extract_keywords(text, top_n=10)
+        }
+        return features
+
+    def calculate_similarity(self, features1, features2):
+        """计算多维特征相似度"""
+        # 数值特征相似度
+        numeric_sim = 0
+        numeric_features = ['word_count', 'unique_words', 'lexical_diversity',
+                        'chinese_chars', 'chinese_ratio', 'english_words',
+                        'english_ratio', 'avg_sentence_length', 'paragraph_count',
+                        'question_ratio', 'exclamation_ratio']
+        
+        for feat in numeric_features:
+            val1 = features1[feat]
+            val2 = features2[feat]
+            max_val = max(val1, val2) or 1
+            numeric_sim += 1 - abs(val1 - val2) / max_val
+        
+        numeric_sim /= len(numeric_features)
+        
+        # 关键词相似度
+        keywords1 = set(features1['keywords'])
+        keywords2 = set(features2['keywords'])
+        keyword_sim = len(keywords1 & keywords2) / max(1, len(keywords1 | keywords2))
+        
+        # 综合相似度
+        total_sim = 0.6 * numeric_sim + 0.4 * keyword_sim
+        return total_sim
+
+    def show_feature_weights(self, features):
+        """显示特征权重表"""
+        self.similarity_table.setRowCount(len(features))
+        
+        for i, (name, value) in enumerate(features.items()):
+            if name == 'keywords':
+                continue
+                
+            self.similarity_table.setItem(i, 0, QTableWidgetItem(name))
+            
+            # 数值型特征
+            if isinstance(value, (int, float)):
+                self.similarity_table.setItem(i, 1, QTableWidgetItem(f"{value:.2f}"))
+                
+                # 添加可视化进度条
+                progress = QProgressBar()
+                max_val = max(1, value * 2, 100) if name in ['word_count', 'chinese_chars'] else 1
+                progress.setValue(int(100 * value / max_val))
+                progress.setStyleSheet("QProgressBar::chunk { background: #2196F3; }")
+                self.similarity_table.setCellWidget(i, 2, progress)
+            else:
+                self.similarity_table.setItem(i, 1, QTableWidgetItem(str(value)))
+                self.similarity_table.setItem(i, 2, QTableWidgetItem("-"))
+        
+        # 关键词特殊处理
+        row = len(features) - 1
+        self.similarity_table.setItem(row, 0, QTableWidgetItem("keywords"))
+        self.similarity_table.setItem(row, 1, QTableWidgetItem(", ".join(features['keywords'][:5])))
+        self.similarity_table.setItem(row, 2, QTableWidgetItem(f"共{len(features['keywords'])}个关键词"))
+
+    def show_similarity_detail(self, item):
+        """显示相似文本详情"""
+        text_id, features = item.data(Qt.UserRole)
+        
+        # 获取文本信息
+        self.cursor.execute("SELECT title, content FROM texts WHERE id=?", (text_id,))
+        title, content = self.cursor.fetchone()
+        
+        # 生成详情报告
+        report = f"📌 相似文本: {title}\n\n"
+        report += f"📝 内容摘要: {content[:200]}...\n\n"
+        report += "🔍 特征分析:\n"
+        
+        for name, value in features.items():
+            if name == 'keywords':
+                report += f" - 关键词: {', '.join(value[:5])} (共{len(value)}个)\n"
+            elif isinstance(value, float):
+                report += f" - {name}: {value:.2f}\n"
+            else:
+                report += f" - {name}: {value}\n"
+        
+        self.similarity_detail.setPlainText(report)
+
+    def analyze_text_features(self, content):
+        """增强版文本特征分析"""
+        features = self.extract_text_features(content)
+        
+        # 1. 更新可读性卡片
+        readability = min(100, max(0, 100 - (features['avg_sentence_length'] * 0.5)))
+        self.readability_score.setText(
+            f"可读性评分: {readability:.1f}/100\n"
+            f"平均句长: {features['avg_sentence_length']:.1f} 词"
+        )
+        self.readability_bar.setValue(int(readability))
+        
+        # 2. 更新情感卡片
+        sentiment_html = """
+        <div style="background:linear-gradient(to right, 
+            #ff4444 0%, #ff9999 {neg}%, 
+            #ffffff {neutral}%, 
+            #99ff99 {pos}%, #44ff44 100%); 
+            height:20px; border-radius:3px;"></div>
+        """.format(
+            neg=30,  # 负面比例
+            neutral=50,  # 中性位置
+            pos=70  # 正面比例
+        )
+        self.sentiment_graph.setText(sentiment_html)
+        
+        # 3. 更新关键词卡片
+        keywords_html = "<div style='line-height:1.8;'>"
+        for i, word in enumerate(features['keywords'][:10]):
+            size = 12 + i * 2
+            color = f"hsl({i*36}, 70%, 50%)"
+            keywords_html += f"<span style='font-size:{size}px; color:{color}; margin:0 3px;'>{word}</span>"
+        keywords_html += "</div>"
+        self.keywords_label.setText(keywords_html)
+        
+        # 4. 更新风格卡片
+        style_text = ""
+        if features['question_ratio'] > 0.2:
+            style_text += "🔹 提问型风格\n"
+        if features['exclamation_ratio'] > 0.15:
+            style_text += "🔹 情感强烈型\n"
+        if features['lexical_diversity'] > 0.7:
+            style_text += "🔹 词汇丰富\n"
+        else:
+            style_text += "🔹 词汇重复较多\n"
+        if features['avg_sentence_length'] > 20:
+            style_text += "🔹 长句结构\n"
+        elif features['avg_sentence_length'] < 10:
+            style_text += "🔹 短句结构\n"
+        
+        self.style_label.setText(style_text)
+        
+        # 5. 更新特征表格
+        self.features_table.setRowCount(len(features))
+        for i, (name, value) in enumerate(features.items()):
+            self.features_table.setItem(i, 0, QTableWidgetItem(name))
+            
+            if name == 'keywords':
+                self.features_table.setItem(i, 1, QTableWidgetItem(", ".join(value[:5])))
+                self.features_table.setItem(i, 2, QTableWidgetItem(f"共{len(value)}个关键词"))
+            elif isinstance(value, float):
+                self.features_table.setItem(i, 1, QTableWidgetItem(f"{value:.2f}"))
+                
+                # 添加说明
+                if name == 'lexical_diversity':
+                    desc = ">0.7表示词汇丰富，<0.5表示重复较多"
+                elif name == 'avg_sentence_length':
+                    desc = "10-20为适中，>20偏长，<10偏短"
+                else:
+                    desc = ""
+                self.features_table.setItem(i, 2, QTableWidgetItem(desc))
+            else:
+                self.features_table.setItem(i, 1, QTableWidgetItem(str(value)))
+                self.features_table.setItem(i, 2, QTableWidgetItem(""))
+
 
     def update_reading_progress(self):
         """更新阅读进度"""
@@ -658,17 +1273,6 @@ class TextManager(QMainWindow):
         # 分类选择框
         self.category_combo = QComboBox()
         self.category_combo.addItem('未分类', 0)
-        self.category_combo.setStyleSheet("""
-            QComboBox {
-                padding: 6px;
-                border: 1px solid #cbd5e1;
-                border-radius: 4px;
-            }
-            QComboBox::drop-down {
-                width: 20px;
-                border-left: 1px solid #e2e8f0;
-            }
-        """)
         self.edit_layout.addWidget(self.category_combo)
         
         # 标签输入框
@@ -1039,13 +1643,24 @@ class TextManager(QMainWindow):
             QMessageBox.critical(self, "错误", f"批量添加标签失败: {str(e)}")
 
     def load_search_history(self):
-        """加载搜索历史"""
+        """加载搜索历史（使用和谐颜色方案）"""
         self.search_history_combo.clear()
         self.cursor.execute(
-            "SELECT query FROM search_history ORDER BY search_time DESC LIMIT 10"
+            "SELECT rowid, query FROM search_history ORDER BY search_time DESC LIMIT 10"
         )
-        history = [item[0] for item in self.cursor.fetchall()]
-        self.search_history_combo.addItems(history)
+        history = self.cursor.fetchall()
+        
+        for rowid, query in history:
+            # 生成较柔和的颜色
+            bg_color, text_color = self.generate_harmonious_color(rowid, saturation=0.3, value=0.96)
+            
+            # 添加历史项并设置颜色
+            self.search_history_combo.addItem(query)
+            index = self.search_history_combo.count() - 1
+            self.search_history_combo.setItemData(index, bg_color, Qt.BackgroundRole)
+            self.search_history_combo.setItemData(index, text_color, Qt.TextColorRole)
+
+
 
     def apply_search_history(self, query):
         """应用搜索历史"""
@@ -1615,7 +2230,7 @@ class TextManager(QMainWindow):
             self.preview_label.setText(html)
 
     def load_categories(self):
-        """加载分类数据"""
+        """加载分类数据（使用和谐颜色方案）"""
         self.category_tree.clear()
         self.cursor.execute("SELECT id, name, parent_id FROM categories ORDER BY parent_id, name")
         categories = self.cursor.fetchall()
@@ -1625,6 +2240,12 @@ class TextManager(QMainWindow):
         for cat_id, name, parent_id in categories:
             item = QTreeWidgetItem([name])
             item.setData(0, Qt.UserRole, cat_id)
+            
+            # 获取和谐颜色组合
+            bg_color, text_color = self.generate_harmonious_color(cat_id)
+            item.setBackground(0, bg_color)
+            item.setForeground(0, text_color)
+            
             categories_dict[cat_id] = item
             
             if parent_id == 0:
@@ -1639,22 +2260,42 @@ class TextManager(QMainWindow):
         self.category_combo.addItem('未分类', 0)
         for cat_id, name, _ in categories:
             self.category_combo.addItem(name, cat_id)
+            # 设置下拉项颜色
+            index = self.category_combo.count() - 1
+            bg_color, text_color = self.generate_harmonious_color(cat_id)
+            self.category_combo.setItemData(index, bg_color, Qt.BackgroundRole)
+            self.category_combo.setItemData(index, text_color, Qt.TextColorRole)
+
+
+
+
 
     def load_tags(self):
-        """加载标签数据"""
+        """加载标签数据（使用和谐颜色方案）"""
         self.tag_cloud.clear()
-        self.cursor.execute("SELECT name FROM tags ORDER BY name")
-        tags = [tag[0] for tag in self.cursor.fetchall()]
-        self.tag_cloud.addItems(tags)
+        self.cursor.execute("SELECT id, name FROM tags ORDER BY name")
+        tags = self.cursor.fetchall()
+        
+        for tag_id, name in tags:
+            # 获取和谐颜色组合
+            bg_color, text_color = self.generate_harmonious_color(tag_id, saturation=0.5, value=0.85)
+            
+            # 添加标签项并设置颜色
+            self.tag_cloud.addItem(name)
+            index = self.tag_cloud.count() - 1
+            self.tag_cloud.setItemData(index, bg_color, Qt.BackgroundRole)
+            self.tag_cloud.setItemData(index, text_color, Qt.TextColorRole)
+
+
 
     def load_text_list(self, category_id=None, tag_name=None, search_query=None):
-        """加载文本列表"""
+        """加载文本列表（使用和谐颜色方案）"""
         if self.current_view == "recycle_bin":
             self.load_recycle_bin_list(search_query)
             return
         
         query = '''
-        SELECT t.id, t.title, c.name 
+        SELECT t.id, t.title, c.name, t.category_id
         FROM texts t
         LEFT JOIN categories c ON t.category_id = c.id
         WHERE 1=1
@@ -1695,15 +2336,41 @@ class TextManager(QMainWindow):
         texts = self.cursor.fetchall()
         
         self.text_list.clear()
+        for text_id, title, category_name, category_id in texts:
+            item = QListWidgetItem(f"{title} [{category_name or '未分类'}] (ID: {text_id})")
+            item.setData(Qt.UserRole, text_id)
+            
+            # 生成颜色（基于分类ID，如果没有分类则使用文本ID）
+            color_id = category_id if category_id else text_id
+            bg_color, text_color = self.generate_harmonious_color(color_id, saturation=0.4, value=0.92)
+            
+            item.setBackground(bg_color)
+            item.setForeground(text_color)
+            
+            self.text_list.addItem(item)
+
+    def filter_by_category(self, item):
+        """按分类筛选文本 - 修改为显示选中分类+未分类的内容"""
+        category_id = item.data(0, Qt.UserRole)
+        
+        # 获取所有未分类的文本
+        query = '''
+        SELECT t.id, t.title, c.name 
+        FROM texts t
+        LEFT JOIN categories c ON t.category_id = c.id
+        WHERE t.category_id = 0 OR t.category_id = ?
+        ORDER BY t.update_time DESC
+        '''
+        
+        self.cursor.execute(query, (category_id,))
+        texts = self.cursor.fetchall()
+        
+        self.text_list.clear()
         for text_id, title, category_name in texts:
             item = QListWidgetItem(f"{title} [{category_name or '未分类'}] (ID: {text_id})")
             item.setData(Qt.UserRole, text_id)
             self.text_list.addItem(item)
 
-    def filter_by_category(self, item):
-        """按分类筛选文本"""
-        category_id = item.data(0, Qt.UserRole)
-        self.load_text_list(category_id=category_id)
 
     def filter_by_tag(self, tag_name):
         """按标签筛选文本"""
@@ -2159,13 +2826,18 @@ class TextManager(QMainWindow):
         # 构建树形结构
         categories_dict = {}
         for cat_id, name, parent_id, color in categories:
-            item = QTreeWidgetItem([name, color])
+            item = QTreeWidgetItem([name, color or '自动生成'])
             item.setData(0, Qt.UserRole, cat_id)
             item.setData(1, Qt.UserRole, color)
             
             # 设置颜色显示
             if color and color != '#FFFFFF':
                 item.setBackground(1, QColor(color))
+            else:
+                # 显示自动生成的颜色
+                auto_color = self.generate_category_color(cat_id)
+                item.setBackground(1, QColor(auto_color))
+                item.setText(1, auto_color)
             
             categories_dict[cat_id] = item
             
@@ -2178,6 +2850,7 @@ class TextManager(QMainWindow):
         
         # 展开所有节点
         self.manage_category_tree.expandAll()
+
 
     def add_category_dialog(self):
         """添加分类对话框"""
@@ -2311,6 +2984,9 @@ class TextManager(QMainWindow):
                 item.setText(1, hex_color)
                 item.setBackground(1, color)
                 
+                # 更新主界面显示
+                self.load_categories()
+
                 self.show_status_message('分类颜色已设置!', 2000)
             except Exception as e:
                 QMessageBox.critical(self, '错误', f'设置颜色失败: {str(e)}')
@@ -2621,6 +3297,104 @@ class TextManager(QMainWindow):
         mode = "选定" if selection_only else "全文"
         format_type = "含格式" if with_format else "无格式"
         self.show_status_message(f"已复制{format_type}{mode}内容", 2000)
+
+    def generate_category_color(self, category_id):
+        """为分类生成和谐且文字清晰的颜色
+        
+        参数:
+            category_id: 分类ID，用于确定颜色序列中的位置
+        
+        返回:
+            QColor对象
+        """
+        # 黄金比例常数
+        golden_ratio = 0.618033988749895
+        
+        # 使用ID乘以黄金比例，然后取小数部分作为色相
+        hue = (category_id * golden_ratio) % 1.0
+        
+        # 调整饱和度和亮度参数，确保颜色既不太刺眼也不太暗淡
+        saturation = 0.6  # 中等饱和度
+        value = 0.9       # 高亮度
+        
+        # 创建颜色对象
+        color = QColor()
+        color.setHsvF(hue, saturation, value)
+        
+        # 计算颜色的亮度 (YIQ公式)
+        brightness = 0.299 * color.redF() + 0.587 * color.greenF() + 0.114 * color.blueF()
+        
+        # 如果颜色太亮(接近白色)，降低亮度
+        if brightness > 0.85:
+            value = 0.7
+            color.setHsvF(hue, saturation, value)
+        
+        # 如果颜色太暗(接近黑色)，提高亮度
+        elif brightness < 0.3:
+            value = 0.8
+            color.setHsvF(hue, saturation, value)
+        
+        return color
+
+
+    def generate_color(self, item_id, saturation=0.7, value=0.95):
+        """使用黄金分割比例生成无限颜色
+        
+        参数:
+            item_id: 项目ID，用于确定颜色序列中的位置
+            saturation: 饱和度 (0-1)
+            value: 亮度 (0-1)
+        
+        返回:
+            QColor对象
+        """
+        # 黄金比例常数
+        golden_ratio = 0.618033988749895
+        
+        # 使用ID乘以黄金比例，然后取小数部分
+        hue = (item_id * golden_ratio) % 1.0
+        
+        # 将色相转换为QColor
+        color = QColor()
+        color.setHsvF(hue, saturation, value)
+        return color
+
+    def generate_harmonious_color(self, item_id, saturation=0.6, value=0.9):
+        """生成和谐的颜色，并自动调整文字颜色确保可读性
+        
+        参数:
+            item_id: 项目ID，用于确定颜色序列中的位置
+            saturation: 饱和度 (0-1)
+            value: 亮度 (0-1)
+        
+        返回:
+            (bg_color, text_color) 元组，分别是背景色和文字色
+        """
+        # 黄金比例常数
+        golden_ratio = 0.618033988749895
+        
+        # 使用ID乘以黄金比例，然后取小数部分作为色相
+        hue = (item_id * golden_ratio) % 1.0
+        
+        # 创建颜色对象
+        bg_color = QColor()
+        bg_color.setHsvF(hue, saturation, value)
+        
+        # 计算颜色的亮度 (YIQ公式)
+        brightness = 0.299 * bg_color.redF() + 0.587 * bg_color.greenF() + 0.114 * bg_color.blueF()
+        
+        # 自动调整颜色确保可读性
+        if brightness > 0.85:  # 太亮
+            value = max(0.7, value - 0.2)
+            bg_color.setHsvF(hue, saturation, value)
+        elif brightness < 0.3:  # 太暗
+            value = min(0.95, value + 0.3)
+            bg_color.setHsvF(hue, saturation, value)
+        
+        # 根据背景亮度确定文字颜色
+        text_color = QColor(Qt.black) if brightness > 0.5 else QColor(Qt.white)
+        
+        return (bg_color, text_color)
 
 
     def clear_search(self):
