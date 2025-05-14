@@ -1,4 +1,9 @@
-![image](https://github.com/user-attachments/assets/1ad128c5-ce19-41f5-a01a-930e0d460079)
+![image](https://github.com/user-attachments/assets/fcfce360-b122-433a-a645-fb732be77e0b)
+
+![image](https://github.com/user-attachments/assets/58c3aa97-bb75-4c46-9c00-e4eb157e2276)
+
+![image](https://github.com/user-attachments/assets/cdc17f6c-f848-4c9c-bd5f-d7a3d8beea1c)
+
 
 # 高级文本管理工具 (Text Manager) 全方位使用说明书
 
