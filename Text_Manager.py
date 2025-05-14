@@ -1,9 +1,12 @@
-__version__ = "6.33.0"
+__version__ = "6.41.0"
 __build_date__ = "2025-05-14"
 __author__ = "杜玛"
 __license__ = "MIT"
 __copyright__ = "© 2025 杜玛"
 __url__ = "https://github.com/duma520"
+
+
+
 
 import sys
 import sqlite3
@@ -13,6 +16,7 @@ import time
 import markdown
 import os
 import math
+import glob
 from pypinyin import lazy_pinyin
 # 布局类
 from PyQt5.QtWidgets import QVBoxLayout, QHBoxLayout, QGridLayout, QFormLayout
@@ -32,9 +36,33 @@ from PyQt5.QtChart import QChart, QPieSeries, QChartView
 
 
 class TextManager(QMainWindow):
+    # 类变量 - 集中管理关于信息
+    ABOUT = {
+        "name": "高级文本管理工具",
+        "version": "6.36.0",
+        "build_date": "2025-05-14",
+        "author": "杜玛",
+        "license": "MIT",
+        "copyright": "© 2025 杜玛",
+        "url": "https://github.com/duma520",
+        "description": "一个功能强大的文本管理工具，支持多种格式和高级搜索功能",
+        "features": [
+            "支持纯文本、Markdown和HTML格式",
+            "全文搜索和高级筛选",
+            "标签和分类管理",
+            "回收站功能",
+            "批量操作",
+            "文本分析和统计"
+        ]
+    }
+
+    # 类变量 - 集中管理配置参数
+    SIMILAR_TEXT_DISPLAY_COUNT = 0  # 控制显示的相似文章数量，0表示显示全部
+
+
     def __init__(self):
         super().__init__()
-        title = f"高级文本管理工具 v{__version__} (Build {__build_date__}) "
+        title = f"{self.ABOUT['name']} v{self.ABOUT['version']} (Build {self.ABOUT['build_date']})"
         self.setWindowTitle(title)
         self.setWindowIcon(QIcon('icon.ico'))
         
@@ -59,6 +87,54 @@ class TextManager(QMainWindow):
         self.auto_save_timer = QTimer()
         self.auto_save_timer.timeout.connect(self.auto_save)
         self.auto_save_timer.start(30000)  # 30秒自动保存
+
+        # 添加全局弹窗样式
+        self.setStyleSheet("""
+            /* 通用弹窗按钮样式 */
+            QMessageBox QPushButton, QDialog QPushButton {
+                min-width: 80px;
+                padding: 6px 12px;
+                border-radius: 4px;
+                border: 1px solid #cbd5e1;
+                background-color: #e2e8f0;
+                color: #1e293b;  /* 深灰色文字 */
+            }
+            QMessageBox QPushButton:hover, QDialog QPushButton:hover {
+                background-color: #cbd5e1;
+            }
+            /* 确认/提交类按钮 */
+            QPushButton[type="submit"], QPushButton[role="accept"] {
+                background-color: #10b981;  /* 绿色 */
+                color: white;
+            }
+            /* 取消/关闭类按钮 */
+            QPushButton[type="cancel"], QPushButton[role="reject"] {
+                background-color: #94a3b8;  /* 灰色 */
+                color: white;
+            }
+            /* 进度条样式 */
+            QProgressBar {
+                border: 1px solid #cbd5e1;
+                border-radius: 4px;
+                text-align: center;
+                height: 20px;
+            }
+            QProgressBar::chunk {
+                background-color: #3b82f6;
+                border-radius: 3px;
+            }            
+
+        """)
+
+        # 备份配置
+        self.backup_config = {
+            'max_backups': 30,  # 最大备份数量
+            'backup_dir': os.path.join(os.path.dirname(__file__), 'backups'),
+            'backup_prefix': 'text_manager_backup_'
+        }
+        
+        # 确保备份目录存在
+        os.makedirs(self.backup_config['backup_dir'], exist_ok=True)
 
     def init_db(self):
         """初始化数据库并检查升级"""
@@ -110,6 +186,7 @@ class TextManager(QMainWindow):
         # 未来版本升级可以在此继续添加
         # if current_version < 3:
         #     self.upgrade_to_version_3()
+
     def init_tables(self):
         """初始化所有表结构（不含版本控制）"""
         self.cursor.executescript('''
@@ -476,12 +553,24 @@ class TextManager(QMainWindow):
         self.status_bar.addPermanentWidget(self.reading_time_label)
         
         # 自动保存指示器
-        self.save_indicator = QLabel('🟢 已自动保存')
+        self.save_indicator = QLabel('✅ 已自动保存')
         self.status_bar.addPermanentWidget(self.save_indicator)
         self.save_indicator.setVisible(False)
         
-        self.reading_progress = QLabel("进度: 0%")
+        # 添加阅读进度条
+        self.reading_progress = QProgressBar()
+        self.reading_progress.setMaximum(100)
+        self.reading_progress.setMinimum(0)
+        self.reading_progress.setFixedWidth(150)
+        self.reading_progress.setFormat("进度: %p%")
+        self.reading_progress.setVisible(False)  # 默认隐藏
         self.status_bar.addPermanentWidget(self.reading_progress)
+
+        # 添加阅读进度标签
+        self.reading_progress_label = QLabel("0%")
+        self.reading_progress_label.setFixedWidth(40)
+        self.status_bar.addPermanentWidget(self.reading_progress_label)
+        
         # 菜单栏
         self.create_menus()
 
@@ -503,16 +592,20 @@ class TextManager(QMainWindow):
             elif format_index == 1:  # Markdown
                 content = self.content_input.toPlainText()
             else:  # HTML
-                # 确保获取纯文本内容进行分析
                 content = self.wysiwyg_editor.toPlainText() if self.wysiwyg_editor.isVisible() else self.content_input.toPlainText()
             
-            # 确保内容不为空
             if not content.strip():
                 QMessageBox.warning(self, "警告", "当前文本内容为空!")
                 return
         except Exception as e:
             QMessageBox.warning(self, "错误", f"获取文本内容失败: {str(e)}")
             return
+
+        # 使用主窗口状态栏的进度条
+        self.reading_progress.setVisible(True)
+        self.reading_progress.setRange(0, 100)
+        self.reading_progress.setValue(0)
+        self.reading_progress.setFormat("分析进度: %p%")
 
         dialog = QDialog(self)
         dialog.setWindowTitle("文本分析")
@@ -573,7 +666,7 @@ class TextManager(QMainWindow):
             }
         """)
         self.similar_texts_list.itemClicked.connect(self.show_similarity_detail)
-        similar_layout.addWidget(QLabel("最相似的5篇文本:"))
+        similar_layout.addWidget(QLabel(f"最相似的{self.SIMILAR_TEXT_DISPLAY_COUNT}篇文本:"))
         similar_layout.addWidget(self.similar_texts_list)
         
         # 相似度详情面板
@@ -657,10 +750,21 @@ class TextManager(QMainWindow):
         features_tab.setLayout(features_layout)
         tab_widget.addTab(features_tab, "文本特征")
 
-        # 将选项卡添加到对话框布局
+        # 添加选项卡到对话框
         layout.addWidget(tab_widget)
         
-        # 分析按钮
+        # 添加"正在分析"标签和进度条
+        self.analyzing_label = QLabel("正在分析文本，请稍候...")
+        self.analyzing_label.setAlignment(Qt.AlignCenter)
+        self.analyzing_label.setStyleSheet("font-size: 14px; color: #555;")
+        layout.addWidget(self.analyzing_label)
+        
+        self.analysis_progress = QProgressBar()
+        self.analysis_progress.setRange(0, 100)
+        self.analysis_progress.setValue(0)
+        layout.addWidget(self.analysis_progress)
+        
+        # 添加分析按钮
         analyze_btn = QPushButton("开始分析")
         analyze_btn.clicked.connect(lambda: self.analyze_text(dialog, content))
         layout.addWidget(analyze_btn)
@@ -671,32 +775,51 @@ class TextManager(QMainWindow):
         self.analyze_text(dialog, content)
         
         dialog.exec_()
+        
+        # 分析完成后恢复进度条原始状态
+        self.reading_progress.setFormat("进度: %p%")
+        self.reading_progress.setValue(0)
 
 
     def analyze_text(self, dialog, content):
         """执行文本分析"""
         print("[DEBUG] 开始文本分析")
+    
+        # 初始化进度条
+        self.reading_progress.setValue(5)
+        QApplication.processEvents()  # 强制更新UI
+    
         try:
             # 1. 初始化统计信息文本框
             self.stats_info.clear()  # 先清空内容
             print("[DEBUG] 初始化统计信息文本框")
-            
+            self.reading_progress.setValue(10)
+            QApplication.processEvents()
+
             # 2. 基本统计
             self.update_basic_stats(content)
             print("[DEBUG] 基本统计信息更新")
+            self.reading_progress.setValue(20)
+            QApplication.processEvents()
             
             # 3. 关键词提取
             keywords = self.extract_keywords(content)
             self.keywords_label.setText(f"关键词: {', '.join(keywords)}")
             print("[DEBUG] 关键词提取:", keywords)
+            self.reading_progress.setValue(35)
+            QApplication.processEvents()
             
             # 4. 查找相似文本
             self.find_similar_texts(content)
+            self.reading_progress.setValue(50)
+            QApplication.processEvents()
             
             # 5. 新增段落统计
             paragraph_count = len([p for p in content.split('\n') if p.strip()])
             self.paragraph_stats.setText(f"段落统计: {paragraph_count}段")
             print("[DEBUG] 段落统计:", paragraph_count)
+            self.reading_progress.setValue(60)
+            QApplication.processEvents()
             
             # 6. 完整版可读性评分计算 (Flesch Reading Ease + 中文适配)
             # 英文部分计算 (Flesch Reading Ease)
@@ -732,16 +855,61 @@ class TextManager(QMainWindow):
                 # 评分描述
                 if readability >= 90:
                     level = "非常容易"
+                    description = (
+                        "文本极其易读，适合所有读者，包括小学生。\n"
+                        "典型文本：儿童读物、简单对话、基础说明文。\n"
+                        "平均句子长度：8个词或更少\n"
+                        "平均每词音节数：1.0或更少"
+                    )
                 elif readability >= 80:
-                    level = "容易" 
+                    level = "容易"
+                    description = (
+                        "文本非常易读，适合普通大众阅读。\n"
+                        "典型文本：流行小说、报纸文章、博客文章。\n"
+                        "平均句子长度：8-12个词\n"
+                        "平均每词音节数：1.0-1.2"
+                    )
                 elif readability >= 70:
-                    level = "较容易"
+                    level = "较容易" 
+                    description = (
+                        "文本比较容易理解，适合13-15岁学生。\n"
+                        "典型文本：青少年读物、杂志文章。\n"
+                        "平均句子长度：12-15个词\n"
+                        "平均每词音节数：1.2-1.4"
+                    )
                 elif readability >= 60:
                     level = "标准"
+                    description = (
+                        "文本难度适中，适合高中毕业生阅读。\n"
+                        "典型文本：普通报刊、大众非小说类书籍。\n"
+                        "平均句子长度：15-17个词\n"
+                        "平均每词音节数：1.4-1.6"
+                    )
                 elif readability >= 50:
                     level = "较难"
-                else:
+                    description = (
+                        "文本有一定难度，适合大学生阅读。\n"
+                        "典型文本：学术论文、专业杂志、技术文档。\n"
+                        "平均句子长度：17-20个词\n"
+                        "平均每词音节数：1.6-1.8"
+                    )
+                elif readability >= 30:
                     level = "困难"
+                    description = (
+                        "文本难度较高，需要专业知识或高等教育背景。\n"
+                        "典型文本：法律文件、学术论文、专业文献。\n"
+                        "平均句子长度：20-25个词\n"
+                        "平均每词音节数：1.8-2.0"
+                    )
+                else:
+                    level = "非常困难"
+                    description = (
+                        "文本极其难懂，需要专业领域知识。\n"
+                        "典型文本：哲学著作、高级技术规范、古典文学。\n"
+                        "平均句子长度：25个词以上\n"
+                        "平均每词音节数：2.0以上"
+                    )
+
                 
                 self.readability_score.setText(
                     f"可读性评分: {readability:.1f}/100 ({level})\n"
@@ -751,7 +919,8 @@ class TextManager(QMainWindow):
                 self.readability_score.setText("可读性评分: 无有效内容")
             
             print(f"[DEBUG] 可读性评分: {readability:.1f} (英文:{flesch_score:.1f} 中文:{chinese_score:.1f})")
-
+            self.reading_progress.setValue(10)
+            QApplication.processEvents()
             
             # 7. 完整版情感分析 (支持中英文混合+程度分析)
             # 扩展的情感词典 (包含程度词和否定词处理)
@@ -866,10 +1035,12 @@ class TextManager(QMainWindow):
             
             print(f"[DEBUG] 情感分析: {sentiment}-{intensity} (正:{positive_score:.1f} 负:{negative_score:.1f})")
             print(f"[DEBUG] 情感词: {top_words}")
-
+            self.reading_progress.setValue(90)
+            QApplication.processEvents()
 
             # 增强版特征分析
             self.analyze_text_features(content)
+            self.reading_progress.setValue(100)
 
             # 更新统计信息文本框 - 使用HTML格式
             stats_html = (
@@ -893,9 +1064,19 @@ class TextManager(QMainWindow):
                 content.count('\n')
             )
             self.stats_info.setHtml(stats_html)
+
+            # 分析完成后隐藏"正在分析"标签
+            if hasattr(self, 'analyzing_label'):
+                self.analyzing_label.setVisible(False)
             
+            # 确保所有分析结果可见
+            for i in range(3):  # 确保3个选项卡都可见
+                dialog.findChild(QTabWidget).setTabVisible(i, True)
+
+            print("[DEBUG] 文本分析完成")
         except Exception as e:
             print("[ERROR] 文本分析失败:", str(e))
+            self.reading_progress.setValue(0)
             QMessageBox.critical(dialog, "错误", f"分析失败: {str(e)}")
 
 
@@ -939,16 +1120,100 @@ class TextManager(QMainWindow):
         self.stats_chart_view.setRenderHint(QPainter.Antialiasing)
 
 
-    def extract_keywords(self, content, top_n=10):
-        """提取关键词(改进版)"""
-        # 中文分词 (简化版，实际应用中应使用jieba等分词库)
+    def extract_keywords(self, content, top_n=10, with_weight=False):
+        """完整版关键词提取(使用jieba分词)
+        
+        参数:
+            content: 要提取关键词的文本内容
+            top_n: 返回关键词数量
+            with_weight: 是否返回关键词权重
+            
+        返回:
+            关键词列表(带权重时为元组列表)
+        """
+        try:
+            import jieba
+            import jieba.analyse
+            
+            # 初始化jieba (第一次使用时加载词典)
+            if not hasattr(jieba, 'dt'):
+                jieba.initialize()
+            
+            # 自定义停用词列表 (可根据需要扩展)
+            stop_words = {
+                '的', '了', '和', '是', '在', '我', '有', '这', '那', '你', '他', '她', '它',
+                '我们', '你们', '他们', '这个', '那个', '要', '也', '都', '会', '可以', '可能',
+                '就是', '这样', '这些', '那些', '一些', '一点', '一种', '一样', '一般', '一定',
+                '非常', '很多', '什么', '为什么', '怎么', '如何', '因为', '所以', '但是', '虽然',
+                '如果', '然后', '而且', '或者', '还是', '不是', '没有', '不要', '不能', '需要',
+                '应该', '可能', '可以', '必须', '只是', '真是', '真是', '真是', '真是', '真是'
+            }
+            
+            # 1. 计算TF-IDF (使用jieba的TF-IDF接口)
+            keywords = jieba.analyse.extract_tags(
+                content,
+                topK=top_n*2,  # 先获取更多候选词
+                withWeight=True,
+                allowPOS=('n', 'vn', 'v', 'a')  # 只保留名词、动名词、动词、形容词
+            )
+            
+            # 2. 过滤停用词和单字词
+            filtered_keywords = [
+                (word, weight) for word, weight in keywords 
+                if word not in stop_words and len(word) > 1
+            ][:top_n]
+            
+            # 3. 计算文档频率 (从数据库获取)
+            doc_freq = {}
+            total_docs = 0
+            self.cursor.execute("SELECT COUNT(*) FROM texts")
+            total_docs = self.cursor.fetchone()[0]
+            
+            if total_docs > 0:
+                for word, _ in filtered_keywords:
+                    self.cursor.execute(
+                        "SELECT COUNT(*) FROM texts WHERE content LIKE ?",
+                        (f'%{word}%',)
+                    )
+                    doc_freq[word] = self.cursor.fetchone()[0]
+            
+            # 4. 调整权重 (结合全局文档频率)
+            final_keywords = []
+            for word, weight in filtered_keywords:
+                # 计算逆文档频率 (IDF)
+                df = doc_freq.get(word, 1)
+                idf = math.log((total_docs + 1) / (df + 1)) + 1  # 平滑处理
+                
+                # 调整后的权重 = TF * IDF
+                adjusted_weight = weight * idf
+                
+                final_keywords.append((word, adjusted_weight))
+            
+            # 按调整后的权重重新排序
+            final_keywords.sort(key=lambda x: x[1], reverse=True)
+            
+            if with_weight:
+                return final_keywords[:top_n]
+            else:
+                return [word for word, weight in final_keywords[:top_n]]
+                
+        except ImportError:
+            # 回退到简单实现 (如果没有安装jieba)
+            QMessageBox.warning(self, "警告", "未安装jieba库，使用简化版关键词提取")
+            return self._fallback_extract_keywords(content, top_n)
+        except Exception as e:
+            print(f"关键词提取错误: {str(e)}")
+            return []
+
+    def _fallback_extract_keywords(self, content, top_n):
+        """jieba不可用时的回退实现"""
         words = re.findall(r'[\u4e00-\u9fa5]{2,}', content)
         
-        # 过滤停用词
+        # 简单停用词过滤
         stop_words = ['的', '了', '和', '是', '在', '我', '有', '这', '那', '你']
         words = [word for word in words if word not in stop_words]
         
-        # 统计词频
+        # 词频统计
         word_counts = {}
         for word in words:
             word_counts[word] = word_counts.get(word, 0) + 1
@@ -956,32 +1221,8 @@ class TextManager(QMainWindow):
         # 按频率排序
         sorted_words = sorted(word_counts.items(), key=lambda x: x[1], reverse=True)
         
-        # 计算TF-IDF简单版 (词频/文档频率)
-        doc_freq = {}
-        total_docs = 0
-        self.cursor.execute("SELECT COUNT(*) FROM texts")
-        total_docs = self.cursor.fetchone()[0]
-        
-        for word, _ in sorted_words[:top_n*2]:  # 检查前20个高频词
-            self.cursor.execute(
-                "SELECT COUNT(*) FROM texts WHERE content LIKE ?",
-                (f'%{word}%',)
-            )
-            doc_freq[word] = self.cursor.fetchone()[0]
-        
-        # 计算TF-IDF分数
-        keywords = []
-        for word, count in sorted_words[:top_n*2]:
-            tf = count / len(words) if words else 0
-            idf = math.log(total_docs / (doc_freq.get(word, 1) + 1)) if total_docs else 1
-            score = tf * idf
-            keywords.append((word, score))
-        
-        # 按TF-IDF分数排序
-        keywords.sort(key=lambda x: x[1], reverse=True)
-        
-        # 返回前N个关键词
-        return [word for word, score in keywords[:top_n]]
+        return [word for word, count in sorted_words[:top_n]]
+
 
 
     def find_similar_texts(self, content):
@@ -1015,8 +1256,10 @@ class TextManager(QMainWindow):
         # 按相似度排序
         similarities.sort(key=lambda x: x[3], reverse=True)
         
-        # 显示前5个相似文本
-        for i, (text_id, title, category, similarity, features) in enumerate(similarities[:5]):
+        # 显示相似文本（如果SIMILAR_TEXT_DISPLAY_COUNT为0则显示全部）
+        display_count = len(similarities) if self.SIMILAR_TEXT_DISPLAY_COUNT == 0 else min(self.SIMILAR_TEXT_DISPLAY_COUNT, len(similarities))
+        
+        for i, (text_id, title, category, similarity, features) in enumerate(similarities[:display_count]):
             item = QListWidgetItem()
             widget = QWidget()
             layout = QHBoxLayout()
@@ -1238,14 +1481,28 @@ class TextManager(QMainWindow):
         if not hasattr(self, 'current_id') or not self.current_id:
             return
         
-        content = self.content_input.toPlainText()
-        cursor = self.content_input.textCursor()
+        # 获取当前编辑器内容
+        if hasattr(self, 'wysiwyg_editor') and self.wysiwyg_editor.isVisible():
+            content = self.wysiwyg_editor.toPlainText()
+            cursor = self.wysiwyg_editor.textCursor()
+        elif hasattr(self, 'content_input'):
+            content = self.content_input.toPlainText()
+            cursor = self.content_input.textCursor()
+        else:
+            return
+        
+        # 计算进度
         position = cursor.position()
         total = len(content)
         
         if total > 0:
-            progress = (position / total) * 100
-            self.reading_progress.setText(f"进度: {progress:.1f}%")
+            progress = int((position / total) * 100)
+            if hasattr(self, 'reading_progress'):
+                self.reading_progress.setValue(progress)
+            if hasattr(self, 'reading_progress_label'):
+                self.reading_progress_label.setText(f"{progress}%")
+
+
 
     def create_edit_tab(self):
         """创建编辑选项卡（完整功能色区分版）"""
@@ -1423,15 +1680,34 @@ class TextManager(QMainWindow):
         self.load_text_list()
 
     def show_batch_operations(self):
-        """显示批量操作对话框"""
+        """显示批量操作对话框（优化按钮文字颜色）"""
         dialog = QDialog(self)
         dialog.setWindowTitle("批量操作")
+        # 添加对话框样式表
         dialog.setStyleSheet("""
+            QDialog {
+                background-color: #f8fafc;
+            }
+            QPushButton {
+                min-width: 80px;
+                padding: 6px 12px;
+                border-radius: 4px;
+                border: 1px solid #cbd5e1;
+                background-color: #e2e8f0;
+                color: #1e293b;  /* 深灰色文字 */
+            }
+            QPushButton:hover {
+                background-color: #cbd5e1;
+            }
+            QPushButton:pressed {
+                background-color: #94a3b8;
+            }
             QGroupBox {
                 border: 1px solid #cbd5e1;
                 border-radius: 6px;
                 margin-top: 10px;
                 padding-top: 15px;
+                background-color: white;
             }
             QGroupBox::title {
                 subcontrol-origin: margin;
@@ -1478,7 +1754,17 @@ class TextManager(QMainWindow):
         self.export_format_combo.addItems(["Markdown (.md)", "纯文本 (.txt)", "HTML (.html)"])
         export_layout.addWidget(self.export_format_combo)
         
+        # 修改按钮样式（示例：导出目录按钮）
         self.export_dir_btn = QPushButton("选择导出目录")
+        self.export_dir_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #3b82f6;  /* 蓝色 */
+                color: white;
+            }
+            QPushButton:hover {
+                background-color: #2563eb;
+            }
+        """)
         self.export_dir_btn.clicked.connect(self.select_export_directory)
         export_layout.addWidget(self.export_dir_btn)
         
@@ -1643,7 +1929,7 @@ class TextManager(QMainWindow):
             QMessageBox.critical(self, "错误", f"批量添加标签失败: {str(e)}")
 
     def load_search_history(self):
-        """加载搜索历史（使用和谐颜色方案）"""
+        """加载搜索历史（使用与文件列表相同的配色方案）"""
         self.search_history_combo.clear()
         self.cursor.execute(
             "SELECT rowid, query FROM search_history ORDER BY search_time DESC LIMIT 10"
@@ -1651,8 +1937,8 @@ class TextManager(QMainWindow):
         history = self.cursor.fetchall()
         
         for rowid, query in history:
-            # 生成较柔和的颜色
-            bg_color, text_color = self.generate_harmonious_color(rowid, saturation=0.3, value=0.96)
+            # 使用与文件列表相同的颜色生成方法
+            bg_color, text_color = self.generate_harmonious_color(rowid, saturation=0.4, value=0.92)
             
             # 添加历史项并设置颜色
             self.search_history_combo.addItem(query)
@@ -1806,7 +2092,7 @@ class TextManager(QMainWindow):
             self.text_list.addItem(item)
 
     def load_recycle_bin_list(self, search_query=None):
-        """加载回收站列表"""
+        """加载回收站列表（使用与文件列表相同的配色方案）"""
         query = "SELECT id, original_id, title, deleted_time FROM recycle_bin WHERE 1=1"
         params = []
         
@@ -1823,7 +2109,14 @@ class TextManager(QMainWindow):
         for item_id, original_id, title, deleted_time in items:
             item = QListWidgetItem(f"{title} (原ID: {original_id}, 删除于: {deleted_time})")
             item.setData(Qt.UserRole, item_id)
+            
+            # 使用与文件列表相同的颜色生成方法
+            bg_color, text_color = self.generate_harmonious_color(original_id, saturation=0.4, value=0.92)
+            item.setBackground(bg_color)
+            item.setForeground(text_color)
+            
             self.text_list.addItem(item)
+
 
     def restore_from_recycle_bin(self):
         """从回收站恢复文本"""
@@ -2230,7 +2523,7 @@ class TextManager(QMainWindow):
             self.preview_label.setText(html)
 
     def load_categories(self):
-        """加载分类数据（使用和谐颜色方案）"""
+        """加载分类数据（使用与文件列表相同的配色方案）"""
         self.category_tree.clear()
         self.cursor.execute("SELECT id, name, parent_id FROM categories ORDER BY parent_id, name")
         categories = self.cursor.fetchall()
@@ -2241,8 +2534,8 @@ class TextManager(QMainWindow):
             item = QTreeWidgetItem([name])
             item.setData(0, Qt.UserRole, cat_id)
             
-            # 获取和谐颜色组合
-            bg_color, text_color = self.generate_harmonious_color(cat_id)
+            # 使用与文件列表相同的颜色生成方法
+            bg_color, text_color = self.generate_harmonious_color(cat_id, saturation=0.4, value=0.92)
             item.setBackground(0, bg_color)
             item.setForeground(0, text_color)
             
@@ -2260,9 +2553,9 @@ class TextManager(QMainWindow):
         self.category_combo.addItem('未分类', 0)
         for cat_id, name, _ in categories:
             self.category_combo.addItem(name, cat_id)
-            # 设置下拉项颜色
+            # 设置下拉项颜色（与文件列表相同）
             index = self.category_combo.count() - 1
-            bg_color, text_color = self.generate_harmonious_color(cat_id)
+            bg_color, text_color = self.generate_harmonious_color(cat_id, saturation=0.4, value=0.92)
             self.category_combo.setItemData(index, bg_color, Qt.BackgroundRole)
             self.category_combo.setItemData(index, text_color, Qt.TextColorRole)
 
@@ -2270,21 +2563,23 @@ class TextManager(QMainWindow):
 
 
 
+
     def load_tags(self):
-        """加载标签数据（使用和谐颜色方案）"""
+        """加载标签数据（使用与文件列表相同的配色方案）"""
         self.tag_cloud.clear()
         self.cursor.execute("SELECT id, name FROM tags ORDER BY name")
         tags = self.cursor.fetchall()
         
         for tag_id, name in tags:
-            # 获取和谐颜色组合
-            bg_color, text_color = self.generate_harmonious_color(tag_id, saturation=0.5, value=0.85)
+            # 使用与文件列表相同的颜色生成方法
+            bg_color, text_color = self.generate_harmonious_color(tag_id, saturation=0.4, value=0.92)
             
             # 添加标签项并设置颜色
             self.tag_cloud.addItem(name)
             index = self.tag_cloud.count() - 1
             self.tag_cloud.setItemData(index, bg_color, Qt.BackgroundRole)
             self.tag_cloud.setItemData(index, text_color, Qt.TextColorRole)
+
 
 
 
@@ -2401,7 +2696,7 @@ class TextManager(QMainWindow):
 
     def show_auto_save_indicator(self):
         """显示自动保存指示器"""
-        self.save_indicator.setText('🟢 ' + datetime.datetime.now().strftime('%H:%M:%S 已保存'))
+        self.save_indicator.setText('✅ ' + datetime.datetime.now().strftime('%H:%M:%S 已保存'))
         self.save_indicator.setVisible(True)
         QTimer.singleShot(3000, lambda: self.save_indicator.setVisible(False))
 
@@ -2453,12 +2748,22 @@ class TextManager(QMainWindow):
     def show_reading_progress(self):
         """显示阅读进度提示"""
         self.update_reading_progress()
-        self.status_bar.showMessage(self.reading_progress.text(), 2000)
+        self.status_bar.showMessage(f"当前阅读进度: {self.reading_progress.value()}%", 2000)
 
     def manage_tags(self):
         """标签管理对话框(支持颜色编码)"""
         dialog = QDialog(self)
         dialog.setWindowTitle("标签管理")
+        dialog.setStyleSheet("""
+            QPushButton {
+                background-color: #e2e8f0;
+                color: #1e293b;
+                padding: 5px 10px;
+            }
+            QPushButton:hover {
+                background-color: #cbd5e1;
+            }
+        """)
         dialog.resize(600, 400)
         
         layout = QVBoxLayout()
@@ -3106,6 +3411,7 @@ class TextManager(QMainWindow):
         # 帮助菜单
         help_menu = menubar.addMenu('帮助')
         about_action = QAction('关于', self)
+        about_action.triggered.connect(self.show_about_dialog)
         help_menu.addAction(about_action)
 
     def copy_without_background(self):
@@ -3360,41 +3666,82 @@ class TextManager(QMainWindow):
         return color
 
     def generate_harmonious_color(self, item_id, saturation=0.6, value=0.9):
-        """生成和谐的颜色，并自动调整文字颜色确保可读性
+        """增强版和谐颜色生成"""
+        # 使用斐波那契散列确保更好的颜色分布
+        def fib_hash(n):
+            phi = (1 + 5**0.5) / 2
+            return (n * phi) % 1.0
         
-        参数:
-            item_id: 项目ID，用于确定颜色序列中的位置
-            saturation: 饱和度 (0-1)
-            value: 亮度 (0-1)
+        hue = fib_hash(item_id)
         
-        返回:
-            (bg_color, text_color) 元组，分别是背景色和文字色
-        """
-        # 黄金比例常数
-        golden_ratio = 0.618033988749895
-        
-        # 使用ID乘以黄金比例，然后取小数部分作为色相
-        hue = (item_id * golden_ratio) % 1.0
+        # 动态调整饱和度基于ID的奇偶性
+        saturation = saturation + (0.1 if item_id % 2 else -0.05)
+        saturation = max(0.3, min(0.9, saturation))
         
         # 创建颜色对象
         bg_color = QColor()
         bg_color.setHsvF(hue, saturation, value)
         
-        # 计算颜色的亮度 (YIQ公式)
-        brightness = 0.299 * bg_color.redF() + 0.587 * bg_color.greenF() + 0.114 * bg_color.blueF()
+        # 使用感知亮度公式
+        brightness = (0.2126 * bg_color.redF() + 
+                    0.7152 * bg_color.greenF() + 
+                    0.0722 * bg_color.blueF())
         
-        # 自动调整颜色确保可读性
-        if brightness > 0.85:  # 太亮
-            value = max(0.7, value - 0.2)
-            bg_color.setHsvF(hue, saturation, value)
-        elif brightness < 0.3:  # 太暗
-            value = min(0.95, value + 0.3)
-            bg_color.setHsvF(hue, saturation, value)
-        
-        # 根据背景亮度确定文字颜色
-        text_color = QColor(Qt.black) if brightness > 0.5 else QColor(Qt.white)
+        # 自动对比度文字颜色（考虑色盲友好）
+        text_color = QColor(Qt.black) if brightness > 0.45 else QColor(Qt.white)
         
         return (bg_color, text_color)
+
+    def perform_auto_backup(self):
+        """执行智能备份，包含循环清理"""
+        try:
+            # 1. 创建新备份
+            timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+            backup_file = os.path.join(
+                self.backup_config['backup_dir'],
+                f"{self.backup_config['backup_prefix']}{timestamp}.db"
+            )
+            
+            # 使用WAL模式确保备份一致性
+            self.cursor.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            
+            # 执行备份
+            backup_conn = sqlite3.connect(backup_file)
+            with backup_conn:
+                self.conn.backup(backup_conn)
+            backup_conn.close()
+            
+            # 2. 清理旧备份
+            self.cleanup_old_backups()
+            
+            self.show_status_message(f"数据库备份完成: {backup_file}", 3000)
+            return True
+        except Exception as e:
+            print(f"备份失败: {str(e)}")
+            return False
+
+    def cleanup_old_backups(self):
+        """清理超出数量的旧备份"""
+        try:
+            # 获取所有备份文件（按时间排序）
+            backups = sorted(
+                glob.glob(os.path.join(
+                    self.backup_config['backup_dir'],
+                    f"{self.backup_config['backup_prefix']}*.db"
+                )),
+                key=os.path.getmtime
+            )
+            
+            # 删除超出数量的旧备份
+            while len(backups) > self.backup_config['max_backups']:
+                oldest_backup = backups.pop(0)
+                try:
+                    os.remove(oldest_backup)
+                    print(f"已清理旧备份: {oldest_backup}")
+                except Exception as e:
+                    print(f"清理备份失败: {oldest_backup} - {str(e)}")
+        except Exception as e:
+            print(f"备份清理出错: {str(e)}")
 
 
     def clear_search(self):
@@ -3403,11 +3750,43 @@ class TextManager(QMainWindow):
         self.advanced_search_group.setChecked(False)
         self.load_text_list()
 
+    def show_about_dialog(self):
+        """显示关于对话框"""
+        about_text = f"""
+        <h2>{self.ABOUT['name']}</h2>
+        <p>版本: {self.ABOUT['version']} (Build {self.ABOUT['build_date']})</p>
+        <p>{self.ABOUT['description']}</p>
+        
+        <h3>主要功能:</h3>
+        <ul>
+            {"".join(f"<li>{feature}</li>" for feature in self.ABOUT['features'])}
+        </ul>
+        
+        <p>作者: {self.ABOUT['author']}<br>
+        许可证: {self.ABOUT['license']}<br>
+        {self.ABOUT['copyright']}</p>
+        
+        <p>项目主页: <a href="{self.ABOUT['url']}">{self.ABOUT['url']}</a></p>
+        """
+        
+        msg = QMessageBox(self)
+        msg.setWindowTitle("关于")
+        msg.setTextFormat(Qt.RichText)
+        msg.setText(about_text)
+        msg.setIconPixmap(QIcon('icon.ico').pixmap(64, 64))
+        msg.exec_()
+
+
     def closeEvent(self, event):
-        """关闭窗口时执行清理"""
+        """关闭时执行智能备份"""
+        self.perform_auto_backup()  # 使用新的备份方法
+        
+        # 原有清理逻辑
         self.auto_save_timer.stop()
         self.conn.close()
         event.accept()
+
+
 
 
 
