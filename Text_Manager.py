@@ -1,5 +1,5 @@
-__version__ = "6.41.0"
-__build_date__ = "2025-05-14"
+__version__ = "6.44.0"
+__build_date__ = "2025-05-15"
 __author__ = "杜玛"
 __license__ = "MIT"
 __copyright__ = "© 2025 杜玛"
@@ -30,7 +30,7 @@ from PyQt5.QtWidgets import (
     QListWidgetItem, QToolBar, QFontComboBox, QToolButton, QButtonGroup,
     QTableWidget, QTableWidgetItem, QHeaderView, QProgressBar
 )
-from PyQt5.QtCore import Qt, QSize, QTimer, QDate, QMimeData
+from PyQt5.QtCore import Qt, QSize, QTimer, QDate, QMimeData, QEvent
 from PyQt5.QtGui import QFont, QIcon, QTextCursor, QKeySequence, QPainter, QColor
 from PyQt5.QtChart import QChart, QPieSeries, QChartView
 
@@ -39,12 +39,12 @@ class TextManager(QMainWindow):
     # 类变量 - 集中管理关于信息
     ABOUT = {
         "name": "高级文本管理工具",
-        "version": "6.36.0",
-        "build_date": "2025-05-14",
-        "author": "杜玛",
-        "license": "MIT",
-        "copyright": "© 2025 杜玛",
-        "url": "https://github.com/duma520",
+        "version": __version__,
+        "build_date": __build_date__,
+        "author": __author__,
+        "license": __license__,
+        "copyright": __copyright__,
+        "url": __url__,
         "description": "一个功能强大的文本管理工具，支持多种格式和高级搜索功能",
         "features": [
             "支持纯文本、Markdown和HTML格式",
@@ -61,7 +61,9 @@ class TextManager(QMainWindow):
 
 
     def __init__(self):
+        print("[启动检查] 1. 进入__init__")  # 基础检查点1
         super().__init__()
+        print("[启动检查] 2. 父类初始化完成")  # 基础检查点2
         title = f"{self.ABOUT['name']} v{self.ABOUT['version']} (Build {self.ABOUT['build_date']})"
         self.setWindowTitle(title)
         self.setWindowIcon(QIcon('icon.ico'))
@@ -76,7 +78,11 @@ class TextManager(QMainWindow):
         self.init_db()       # 现在包含版本检查和升级
         self.init_ui()
         self.init_shortcuts()
-        
+
+        # 安装事件过滤器（添加在这里↓↓↓）
+        self.btn_new.installEventFilter(self)
+        print("[DEBUG] 事件过滤器已安装")  # 调试确认
+
         # 加载初始数据
         self.load_categories()
         self.load_tags()
@@ -135,6 +141,17 @@ class TextManager(QMainWindow):
         
         # 确保备份目录存在
         os.makedirs(self.backup_config['backup_dir'], exist_ok=True)
+
+        # 调试
+        print(f"[INIT] 新建按钮连接状态: {self.btn_new.receivers(self.btn_new.clicked) > 0}")
+
+        def basic_click_test():
+            print("[DEBUG] 按钮被点击！")  # 最基础的点击确认
+            
+        self.btn_new.clicked.connect(basic_click_test)
+        print(f"[DEBUG] 基础点击测试连接状态: {self.btn_new.receivers(self.btn_new.clicked)}") 
+
+
 
     def init_db(self):
         """初始化数据库并检查升级"""
@@ -282,6 +299,42 @@ class TextManager(QMainWindow):
             )
 
     def init_ui(self):
+
+        self.MACARON_COLORS = [
+            # ======================
+            # 标准马卡龙16色
+            # ======================
+
+            # 粉色系（4色）
+            QColor(255, 183, 206),  # #FFB7CE 经典樱花粉
+            QColor(255, 209, 220),  # #FFD1DC 泡泡糖粉
+            QColor(255, 215, 225),  # #FFD7E1 草莓奶霜
+            QColor(255, 227, 227),  # #FFE3E3 浅珊瑚粉
+
+            # 蓝色系（3色）
+            QColor(162, 225, 246),  # #A2E1F6 天空蓝
+            QColor(200, 255, 240),  # #C8FFF0 冰蓝
+            QColor(214, 232, 255),  # #D6E8FF 淡 powder 蓝
+
+            # 绿色系（3色）
+            QColor(181, 234, 215),  # #B5EAD7 薄荷绿
+            QColor(210, 255, 210),  # #D2FFD2 苹果绿
+            QColor(220, 245, 220),  # #DCF5DC 嫩绿
+
+            # 黄色/橙色系（3色）
+            QColor(255, 234, 165),  # #FFEAA5 柠檬黄
+            QColor(255, 240, 200),  # #FFF0C8 奶油黄
+            QColor(255, 218, 193),  # #FFDAC1 蜜桃橙
+
+            # 紫色系（2色）
+            QColor(199, 206, 234),  # #C7CEEA 薰衣草紫
+            QColor(216, 191, 216),  # #D8BFD8 香芋紫
+
+            # 中性色（1色）
+            QColor(240, 230, 221),  # #F0E6DD 焦糖奶霜
+        ]
+
+        print("[UI初始化] 1. 开始初始化UI")
         """初始化用户界面（功能色区分版）"""
         # 基于功能分色的专业样式表
         self.setStyleSheet("""
@@ -293,8 +346,6 @@ class TextManager(QMainWindow):
                 font-family: 'Segoe UI', 'Microsoft YaHei';
                 font-size: 13px;
             }
-
-
 
             /* ========== 功能按钮色彩系统 ========== */
             /* 主操作按钮基础样式 */
@@ -309,20 +360,18 @@ class TextManager(QMainWindow):
             
             /* 1. 新建 - 创造型操作 (活力蓝) */
             QPushButton.new-action {
-                background-color: #3b82f6;
-                background-image: linear-gradient(to bottom, #3b82f6, #2563eb);
+                background-color: #8b5cf6;  /* 薰衣草紫 */
             }
             QPushButton.new-action:hover {
-                background-color: #2563eb;
+                background-color: #7c3aed;
             }
             QPushButton.new-action:pressed {
-                background-color: #1d4ed8;
+                background-color: #6d28d9;
             }
             
             /* 2. 保存 - 关键操作 (安全绿) */
             QPushButton.save-action {
-                background-color: #10b981;
-                background-image: linear-gradient(to bottom, #10b981, #059669);
+                background-color: #10b981;  /* 薄荷绿 */
             }
             QPushButton.save-action:hover {
                 background-color: #059669;
@@ -333,8 +382,7 @@ class TextManager(QMainWindow):
             
             /* 3. 删除/危险操作 (警示红) */
             QPushButton.danger-action {
-                background-color: #ef4444;
-                background-image: linear-gradient(to bottom, #ef4444, #dc2626);
+                background-color: #ef4444;  /* 浅玫瑰 */
             }
             QPushButton.danger-action:hover {
                 background-color: #dc2626;
@@ -345,20 +393,18 @@ class TextManager(QMainWindow):
             
             /* 4. 文本分析 - 分析型操作 (智慧紫) */
             QPushButton.analyze-action {
-                background-color: #8b5cf6;
-                background-image: linear-gradient(to bottom, #8b5cf6, #7c3aed);
+                background-color: #7c3aed;  /* 深薰衣草 */
             }
             QPushButton.analyze-action:hover {
-                background-color: #7c3aed;
+                background-color: #6d28d9;
             }
             QPushButton.analyze-action:pressed {
-                background-color: #6d28d9;
+                background-color: #5b21b6;
             }
             
             /* 5. 复制/导出 - 数据操作 (友好橙) */
             QPushButton.data-action {
-                background-color: #f97316;
-                background-image: linear-gradient(to bottom, #f97316, #ea580c);
+                background-color: #f97316;  /* 杏色 */
             }
             QPushButton.data-action:hover {
                 background-color: #ea580c;
@@ -370,53 +416,34 @@ class TextManager(QMainWindow):
             /* 6. 辅助操作 (中性灰) */
             QPushButton.secondary-action {
                 background-color: #94a3b8;
-                background-image: linear-gradient(to bottom, #94a3b8, #64748b);
                 color: #f8fafc;
             }
             QPushButton.secondary-action:hover {
                 background-color: #64748b;
             }
             
-            /* ========== 按钮状态标识 ========== */
-            QPushButton[urgent="true"] {
-                animation: pulse 2s infinite;
-            }
-            @keyframes pulse {
-                0% { opacity: 1; }
-                50% { opacity: 0.7; }
-                100% { opacity: 1; }
-            }
-            
-            /* ========== 图标按钮样式 ========== */
-            QPushButton.icon-button {
-                min-width: auto;
-                padding: 5px;
-                border-radius: 3px;
-            }
-                           
-            /* 视图切换按钮 - 特殊状态色 (深紫色) */
+            /* 视图切换按钮 - 特殊状态色 (淡丁香) */
             QPushButton.view-toggle-action {
-                background-color: #6b46c1;
-                background-image: linear-gradient(to bottom, #6b46c1, #553c9a);
+                background-color: #a78bfa;
                 color: white;
             }
             QPushButton.view-toggle-action:hover {
-                background-color: #553c9a;
+                background-color: #8b5cf6;
             }
             QPushButton.view-toggle-action:pressed {
-                background-color: #44337a;
+                background-color: #7c3aed;
             }
-            /* 批量操作按钮 - 特殊操作色 (深青色) */
+
+            /* 批量操作按钮 - 特殊操作色 (浅青) */
             QPushButton.batch-action {
-                background-color: #0d9488;
-                background-image: linear-gradient(to bottom, #0d9488, #0f766e);
+                background-color: #5eead4;
                 color: white;
             }
             QPushButton.batch-action:hover {
-                background-color: #0f766e;
+                background-color: #2dd4bf;
             }
             QPushButton.batch-action:pressed {
-                background-color: #115e59;
+                background-color: #14b8a6;
             }
             /* 批量操作对话框按钮样式 */
             QDialog QPushButton {
@@ -436,7 +463,14 @@ class TextManager(QMainWindow):
 
         self.resize(1200, 800)
         self.setMinimumSize(QSize(900, 600))
+
+        print(f"[UI初始化] 2. 主窗口尺寸: {self.size()}")
+        print(f"[UI初始化] 3. 新建按钮存在: {hasattr(self, 'btn_new')}")
         
+        if hasattr(self, 'btn_new'):
+            print(f"[UI初始化] 4. 按钮状态 - 可见: {self.btn_new.isVisible()}, 启用: {self.btn_new.isEnabled()}")
+            self.btn_new.setStyleSheet("background: red;")  # 强制设置醒目颜色
+
         # 主布局
         self.main_widget = QWidget()
         self.setCentralWidget(self.main_widget)
@@ -540,6 +574,8 @@ class TextManager(QMainWindow):
         self.main_layout.addWidget(self.right_panel, 7)
         
         # 创建编辑选项卡
+        print("[DEBUG] === 开始创建编辑界面 ===")
+        print(f"[DEBUG] 调用 create_edit_tab()")
         self.create_edit_tab()
         self.create_preview_tab()
         # 状态栏
@@ -573,6 +609,18 @@ class TextManager(QMainWindow):
         
         # 菜单栏
         self.create_menus()
+
+        # 确保按钮可见且可点击
+        print(f"[DEBUG] 新建按钮可见性: {self.btn_new.isVisible()}")
+        print(f"[DEBUG] 新建按钮启用状态: {self.btn_new.isEnabled()}")
+        self.btn_new.raise_()  # 确保按钮在最上层
+
+        # 调试
+        print(f"[UI_INIT] 新建按钮对象: {self.btn_new}")
+        print(f"[UI_INIT] 新建按钮连接状态: {self.btn_new.receivers(self.btn_new.clicked) > 0}")
+
+
+
 
 
 
@@ -1506,137 +1554,200 @@ class TextManager(QMainWindow):
 
     def create_edit_tab(self):
         """创建编辑选项卡（完整功能色区分版）"""
-        self.edit_tab = QWidget()
-        self.edit_layout = QVBoxLayout()
-        self.edit_tab.setLayout(self.edit_layout)
-        
-        # 标题输入框（带聚焦效果）
-        self.title_input = QLineEdit()
-        self.title_input.setPlaceholderText('输入标题...')
-        self.title_input.setStyleSheet("""
-            QLineEdit {
-                font-size: 14px;
-                padding: 8px;
-                border: 1px solid #cbd5e1;
-                border-radius: 4px;
-            }
-            QLineEdit:focus {
-                border: 1px solid #3b82f6;
-                background-color: #f8fafc;
-            }
-        """)
-        self.edit_layout.addWidget(self.title_input)
-        
-        # 分类选择框
-        self.category_combo = QComboBox()
-        self.category_combo.addItem('未分类', 0)
-        self.edit_layout.addWidget(self.category_combo)
-        
-        # 标签输入框
-        self.tag_edit = QLineEdit()
-        self.tag_edit.setPlaceholderText('输入标签，用逗号分隔')
-        self.edit_layout.addWidget(self.tag_edit)
-        
-        # 格式选择
-        self.format_combo = QComboBox()
-        self.format_combo.addItem('纯文本')
-        self.format_combo.addItem('Markdown')
-        self.format_combo.addItem('即见即所得')
-        self.format_combo.setCurrentIndex(self.default_format)
-        self.format_combo.currentIndexChanged.connect(self.toggle_edit_mode)
-        self.edit_layout.addWidget(self.format_combo)
-        
-        # 文本编辑区
-        self.content_input = QTextEdit()
-        self.content_input.setStyleSheet("""
-            QTextEdit {
-                border: 1px solid #cbd5e1;
-                border-radius: 4px;
-                padding: 8px;
-                font-family: 'Consolas', 'Microsoft YaHei', monospace;
-            }
-        """)
-        self.content_input.textChanged.connect(self.update_word_count)
-        self.edit_layout.addWidget(self.content_input)
-        
-        # WYSIWYG编辑器（初始隐藏）
-        self.wysiwyg_editor = QTextEdit()
-        self.wysiwyg_editor.setAcceptRichText(True)
-        self.wysiwyg_editor.setVisible(False)
-        self.wysiwyg_editor.setStyleSheet("""
-            QTextEdit {
-                border: 1px solid #cbd5e1;
-                border-radius: 4px;
-                padding: 8px;
-                background-color: white;
-            }
-        """)
-        self.edit_layout.addWidget(self.wysiwyg_editor)
-        
-        # 操作按钮区域 ======================================
-        btn_layout = QHBoxLayout()
-        
-        # 新建按钮（活力蓝）
-        self.btn_new = QPushButton(QIcon.fromTheme('document-new'), '新建')
-        self.btn_new.setProperty("class", "new-action")
-        self.btn_new.setCursor(Qt.PointingHandCursor)
-        self.btn_new.clicked.connect(self.new_text)
-        btn_layout.addWidget(self.btn_new)
-        
-        # 保存按钮（安全绿）
-        self.btn_save = QPushButton(QIcon.fromTheme('document-save'), '保存')
-        self.btn_save.setProperty("class", "save-action")
-        self.btn_save.setCursor(Qt.PointingHandCursor)
-        self.btn_save.clicked.connect(self.save_text)
-        btn_layout.addWidget(self.btn_save)
-        
-        # 删除按钮（警示红）
-        self.btn_delete = QPushButton(QIcon.fromTheme('edit-delete'), '删除')
-        self.btn_delete.setProperty("class", "danger-action")
-        self.btn_delete.setCursor(Qt.PointingHandCursor)
-        self.btn_delete.clicked.connect(self.delete_text)
-        btn_layout.addWidget(self.btn_delete)
-        
-        # 恢复按钮（中性灰）
-        self.btn_restore = QPushButton('从回收站恢复')
-        self.btn_restore.setProperty("class", "secondary-action")
-        self.btn_restore.setCursor(Qt.PointingHandCursor)
-        self.btn_restore.clicked.connect(self.restore_from_recycle_bin)
-        self.btn_restore.setVisible(False)
-        btn_layout.addWidget(self.btn_restore)
-        
-        # 文本分析按钮（智慧紫）
-        self.stats_btn = QPushButton(QIcon.fromTheme('office-chart-bar'), '文本分析')
-        self.stats_btn.setProperty("class", "analyze-action")
-        self.stats_btn.setCursor(Qt.PointingHandCursor)
-        self.stats_btn.clicked.connect(self.show_text_analysis)
-        btn_layout.addWidget(self.stats_btn)
-        
-        # 复制按钮下拉菜单（友好橙）
-        self.copy_menu = QMenu(self)
-        copy_actions = [
-            ("复制全文(含格式)", lambda: self.copy_text(with_format=True, selection_only=False)),
-            ("复制全文(无格式)", lambda: self.copy_text(with_format=False, selection_only=False)),
-            ("复制选定(含格式)", lambda: self.copy_text(with_format=True, selection_only=True)),
-            ("复制选定(无格式)", lambda: self.copy_text(with_format=False, selection_only=True))
-        ]
-        for text, handler in copy_actions:
-            action = QAction(text, self)
-            action.triggered.connect(handler)
-            self.copy_menu.addAction(action)
-        
-        self.copy_btn = QPushButton(QIcon.fromTheme('edit-copy'), '复制 ▼')
-        self.copy_btn.setProperty("class", "data-action")
-        self.copy_btn.setCursor(Qt.PointingHandCursor)
-        self.copy_btn.setMenu(self.copy_menu)
-        btn_layout.addWidget(self.copy_btn)
-        
-        self.edit_layout.addLayout(btn_layout)
-        self.right_panel.addTab(self.edit_tab, "编辑")
-        
-        # 连接文本光标变化信号
-        self.content_input.cursorPositionChanged.connect(self.update_reading_progress)
-        self.wysiwyg_editor.cursorPositionChanged.connect(self.update_reading_progress)
+        try:
+            # 调试信息 - 开始创建编辑选项卡
+            print("[DEBUG] === 开始创建编辑选项卡 ===")
+            
+            # 检查主布局是否存在
+            if not hasattr(self, 'right_panel'):
+                print("[ERROR] right_panel 未初始化")
+                raise AttributeError("right_panel 未初始化")
+            
+            # 创建编辑选项卡
+            self.edit_tab = QWidget()
+            self.edit_layout = QVBoxLayout()
+            self.edit_tab.setLayout(self.edit_layout)
+            
+            # 调试信息 - 基本框架创建完成
+            print("[DEBUG] 编辑选项卡基本框架创建完成")
+            
+            # 标题输入框（带聚焦效果）
+            self.title_input = QLineEdit()
+            if not self.title_input:
+                print("[ERROR] 无法创建 title_input")
+                raise RuntimeError("无法创建标题输入框")
+                
+            self.title_input.setPlaceholderText('输入标题...')
+            self.title_input.setStyleSheet("""
+                QLineEdit {
+                    font-size: 14px;
+                    padding: 8px;
+                    border: 1px solid #cbd5e1;
+                    border-radius: 4px;
+                }
+                QLineEdit:focus {
+                    border: 1px solid #3b82f6;
+                    background-color: #f8fafc;
+                }
+            """)
+            self.edit_layout.addWidget(self.title_input)
+            print("[DEBUG] 标题输入框创建并添加完成")
+            
+            # 分类选择框
+            self.category_combo = QComboBox()
+            self.category_combo.addItem('未分类', 0)
+            self.edit_layout.addWidget(self.category_combo)
+            print("[DEBUG] 分类选择框创建并添加完成")
+            
+            # 标签输入框
+            self.tag_edit = QLineEdit()
+            self.tag_edit.setPlaceholderText('输入标签，用逗号分隔')
+            self.edit_layout.addWidget(self.tag_edit)
+            print("[DEBUG] 标签输入框创建并添加完成")
+            
+            # 格式选择
+            self.format_combo = QComboBox()
+            self.format_combo.addItem('纯文本')
+            self.format_combo.addItem('Markdown')
+            self.format_combo.addItem('即见即所得')
+            self.format_combo.setCurrentIndex(self.default_format)
+            self.format_combo.currentIndexChanged.connect(self.toggle_edit_mode)
+            self.edit_layout.addWidget(self.format_combo)
+            print(f"[DEBUG] 格式选择框创建并添加完成，默认索引: {self.default_format}")
+            
+            # 文本编辑区
+            self.content_input = QTextEdit()
+            if not self.content_input:
+                print("[ERROR] 无法创建 content_input")
+                raise RuntimeError("无法创建内容编辑器")
+                
+            self.content_input.setStyleSheet("""
+                QTextEdit {
+                    border: 1px solid #cbd5e1;
+                    border-radius: 4px;
+                    padding: 8px;
+                    font-family: 'Consolas', 'Microsoft YaHei', monospace;
+                }
+            """)
+            self.content_input.textChanged.connect(self.update_word_count)
+            self.edit_layout.addWidget(self.content_input)
+            print("[DEBUG] 内容编辑器创建并添加完成")
+            
+            # WYSIWYG编辑器（初始隐藏）
+            self.wysiwyg_editor = QTextEdit()
+            self.wysiwyg_editor.setAcceptRichText(True)
+            self.wysiwyg_editor.setVisible(False)
+            self.wysiwyg_editor.setStyleSheet("""
+                QTextEdit {
+                    border: 1px solid #cbd5e1;
+                    border-radius: 4px;
+                    padding: 8px;
+                    background-color: white;
+                }
+            """)
+            self.edit_layout.addWidget(self.wysiwyg_editor)
+            print("[DEBUG] WYSIWYG编辑器创建并添加完成")
+            
+            # 操作按钮区域 ======================================
+            btn_layout = QHBoxLayout()
+            
+            # 新建按钮（活力蓝）
+            self.btn_new = QPushButton(QIcon.fromTheme('document-new'), '新建')
+            print(f"[DEBUG] 新建按钮对象创建成功: {self.btn_new}")  # 确认按钮对象创建
+            if not self.btn_new:
+                print("[ERROR] 无法创建 btn_new")
+                raise RuntimeError("无法创建新建按钮")
+                
+            self.btn_new.setProperty("class", "new-action")
+            self.btn_new.setCursor(Qt.PointingHandCursor)
+            btn_layout.addWidget(self.btn_new)
+            
+            # 添加按钮调试信息
+            print(f"[DEBUG] 新建按钮对象: {self.btn_new}")
+            print(f"[DEBUG] 新建按钮连接状态: {self.btn_new.receivers(self.btn_new.clicked) > 0}")
+            
+            # 修改连接方式，确保连接成功
+            def safe_new_text():
+                print("[DEBUG] 新建按钮被点击")
+                try:
+                    self.new_text()
+                except Exception as e:
+                    print(f"[ERROR] 调用new_text失败: {str(e)}")
+                    QMessageBox.critical(self, "错误", f"新建文本失败: {str(e)}")
+            
+            self.btn_new.clicked.connect(safe_new_text)
+            print(f"[DEBUG] 新建按钮连接完成，接收器数量: {self.btn_new.receivers(self.btn_new.clicked)}")
+            
+            # 保存按钮（安全绿）
+            self.btn_save = QPushButton(QIcon.fromTheme('document-save'), '保存')
+            self.btn_save.setProperty("class", "save-action")
+            self.btn_save.setCursor(Qt.PointingHandCursor)
+            self.btn_save.clicked.connect(self.save_text)
+            btn_layout.addWidget(self.btn_save)
+            print("[DEBUG] 保存按钮创建并添加完成")
+            
+            # 删除按钮（警示红）
+            self.btn_delete = QPushButton(QIcon.fromTheme('edit-delete'), '删除')
+            self.btn_delete.setProperty("class", "danger-action")
+            self.btn_delete.setCursor(Qt.PointingHandCursor)
+            self.btn_delete.clicked.connect(self.delete_text)
+            btn_layout.addWidget(self.btn_delete)
+            print("[DEBUG] 删除按钮创建并添加完成")
+            
+            # 恢复按钮（中性灰）
+            self.btn_restore = QPushButton('从回收站恢复')
+            self.btn_restore.setProperty("class", "secondary-action")
+            self.btn_restore.setCursor(Qt.PointingHandCursor)
+            self.btn_restore.clicked.connect(self.restore_from_recycle_bin)
+            self.btn_restore.setVisible(False)
+            btn_layout.addWidget(self.btn_restore)
+            print("[DEBUG] 恢复按钮创建并添加完成")
+            
+            # 文本分析按钮（智慧紫）
+            self.stats_btn = QPushButton(QIcon.fromTheme('office-chart-bar'), '文本分析')
+            self.stats_btn.setProperty("class", "analyze-action")
+            self.stats_btn.setCursor(Qt.PointingHandCursor)
+            self.stats_btn.clicked.connect(self.show_text_analysis)
+            btn_layout.addWidget(self.stats_btn)
+            print("[DEBUG] 文本分析按钮创建并添加完成")
+            
+            # 复制按钮下拉菜单（友好橙）
+            self.copy_menu = QMenu(self)
+            copy_actions = [
+                ("复制全文(含格式)", lambda: self.copy_text(with_format=True, selection_only=False)),
+                ("复制全文(无格式)", lambda: self.copy_text(with_format=False, selection_only=False)),
+                ("复制选定(含格式)", lambda: self.copy_text(with_format=True, selection_only=True)),
+                ("复制选定(无格式)", lambda: self.copy_text(with_format=False, selection_only=True))
+            ]
+            for text, handler in copy_actions:
+                action = QAction(text, self)
+                action.triggered.connect(handler)
+                self.copy_menu.addAction(action)
+            
+            self.copy_btn = QPushButton(QIcon.fromTheme('edit-copy'), '复制 ▼')
+            self.copy_btn.setProperty("class", "data-action")
+            self.copy_btn.setCursor(Qt.PointingHandCursor)
+            self.copy_btn.setMenu(self.copy_menu)
+            btn_layout.addWidget(self.copy_btn)
+            print("[DEBUG] 复制按钮菜单创建并添加完成")
+            
+            self.edit_layout.addLayout(btn_layout)
+            self.right_panel.addTab(self.edit_tab, "编辑")
+            print("[DEBUG] 编辑选项卡添加完成")
+            
+            # 连接文本光标变化信号
+            self.content_input.cursorPositionChanged.connect(self.update_reading_progress)
+            self.wysiwyg_editor.cursorPositionChanged.connect(self.update_reading_progress)
+            print("[DEBUG] 光标变化信号连接完成")
+            
+            print("[DEBUG] === 编辑选项卡创建完成 ===")
+            
+        except Exception as e:
+            print(f"[CRITICAL] 创建编辑选项卡时发生错误: {str(e)}")
+            traceback.print_exc()
+            QMessageBox.critical(self, "严重错误", f"无法创建编辑界面: {str(e)}")
+            raise  # 重新抛出异常，让上层处理
+
 
 
     def create_preview_tab(self):
@@ -2686,13 +2797,71 @@ class TextManager(QMainWindow):
 
     def new_text(self):
         """新建文本"""
+        print("[DEBUG] === 开始执行 new_text() ===")
+        print(f"[DEBUG] 通过 {self.sender()} 触发")
+        print(f"[DEBUG] 当前 current_id: {self.current_id}")
+        
         self.current_id = None
+        print("[DEBUG] 已重置 current_id 为 None")
+
+        # 调试标题输入框
+        print(f"[DEBUG] 标题输入框当前内容: '{self.title_input.text()}'")
         self.title_input.clear()
-        self.content_input.clear()
+        print("[DEBUG] 已清空标题输入框")
+
+        # 调试内容编辑器
+        print(f"[DEBUG] content_input 编辑器内容长度: {len(self.content_input.toPlainText())}")
+        print(f"[DEBUG] content_input 编辑器是否可见: {self.content_input.isVisible()}")
+        self.content_input.setPlainText("")
+        print("[DEBUG] 已执行 content_input.setPlainText('')")
+        print(f"[DEBUG] content_input 清空后内容长度: {len(self.content_input.toPlainText())}")
+
+        # 调试富文本编辑器
+        print(f"[DEBUG] wysiwyg_editor HTML内容长度: {len(self.wysiwyg_editor.toHtml())}")
+        print(f"[DEBUG] wysiwyg_editor 纯文本内容长度: {len(self.wysiwyg_editor.toPlainText())}")
+        print(f"[DEBUG] wysiwyg_editor 是否可见: {self.wysiwyg_editor.isVisible()}")
+        self.wysiwyg_editor.setHtml("")
+        self.wysiwyg_editor.document().clear()
+        print("[DEBUG] 已执行 wysiwyg_editor.setHtml('') 和 document().clear()")
+        print(f"[DEBUG] wysiwyg_editor 清空后 HTML 长度: {len(self.wysiwyg_editor.toHtml())}")
+        print(f"[DEBUG] wysiwyg_editor 清空后纯文本长度: {len(self.wysiwyg_editor.toPlainText())}")
+
+        # 调试标签和分类
+        print(f"[DEBUG] 标签输入框当前内容: '{self.tag_edit.text()}'")
         self.tag_edit.clear()
+        print("[DEBUG] 已清空标签输入框")
+        
+        print(f"[DEBUG] 当前分类选择索引: {self.category_combo.currentIndex()}")
         self.category_combo.setCurrentIndex(0)
-        self.format_combo.setCurrentIndex(0)
+        print("[DEBUG] 已重置分类选择为索引0")
+
+        # 调试格式选择
+        print(f"[DEBUG] 当前格式选择索引: {self.format_combo.currentIndex()}")
+        print(f"[DEBUG] 默认格式(default_format): {self.default_format}")
+        self.format_combo.setCurrentIndex(self.default_format)
+        print(f"[DEBUG] 已设置格式选择索引为: {self.format_combo.currentIndex()}")
+
+        # 调试编辑器切换
+        print("[DEBUG] === 准备执行 toggle_edit_mode() ===")
+        print(f"[DEBUG] 切换前 - content_input 可见性: {self.content_input.isVisible()}")
+        print(f"[DEBUG] 切换前 - wysiwyg_editor 可见性: {self.wysiwyg_editor.isVisible()}")
+        self.toggle_edit_mode()
+        print("[DEBUG] 已执行 toggle_edit_mode()")
+        print(f"[DEBUG] 切换后 - content_input 可见性: {self.content_input.isVisible()}")
+        print(f"[DEBUG] 切换后 - wysiwyg_editor 可见性: {self.wysiwyg_editor.isVisible()}")
+
+        # 调试焦点设置
+        print("[DEBUG] 正在设置标题输入框焦点...")
         self.title_input.setFocus()
+        print(f"[DEBUG] 当前焦点控件: {QApplication.focusWidget()}")
+        
+        print("[DEBUG] === new_text() 执行结束 ===")
+
+
+
+
+
+
 
     def show_auto_save_indicator(self):
         """显示自动保存指示器"""
@@ -3665,32 +3834,22 @@ class TextManager(QMainWindow):
         color.setHsvF(hue, saturation, value)
         return color
 
-    def generate_harmonious_color(self, item_id, saturation=0.6, value=0.9):
-        """增强版和谐颜色生成"""
-        # 使用斐波那契散列确保更好的颜色分布
-        def fib_hash(n):
-            phi = (1 + 5**0.5) / 2
-            return (n * phi) % 1.0
+    def generate_harmonious_color(self, item_id, saturation=0.4, value=0.92):
+        """使用马卡龙色系生成颜色"""
+        # 使用ID选择马卡龙色系中的颜色
+        color_index = item_id % len(self.MACARON_COLORS)
+        bg_color = self.MACARON_COLORS[color_index]
         
-        hue = fib_hash(item_id)
+        # 计算颜色的亮度 (YIQ公式)
+        brightness = (0.299 * bg_color.redF() + 
+                    0.587 * bg_color.greenF() + 
+                    0.114 * bg_color.blueF())
         
-        # 动态调整饱和度基于ID的奇偶性
-        saturation = saturation + (0.1 if item_id % 2 else -0.05)
-        saturation = max(0.3, min(0.9, saturation))
-        
-        # 创建颜色对象
-        bg_color = QColor()
-        bg_color.setHsvF(hue, saturation, value)
-        
-        # 使用感知亮度公式
-        brightness = (0.2126 * bg_color.redF() + 
-                    0.7152 * bg_color.greenF() + 
-                    0.0722 * bg_color.blueF())
-        
-        # 自动对比度文字颜色（考虑色盲友好）
-        text_color = QColor(Qt.black) if brightness > 0.45 else QColor(Qt.white)
+        # 自动对比度文字颜色
+        text_color = QColor(Qt.black) if brightness > 0.6 else QColor(Qt.white)
         
         return (bg_color, text_color)
+
 
     def perform_auto_backup(self):
         """执行智能备份，包含循环清理"""
@@ -3777,7 +3936,14 @@ class TextManager(QMainWindow):
         msg.exec_()
 
 
+
+    def showEvent(self, event):
+        print("[窗口事件] 窗口显示")
+        super().showEvent(event)
+
     def closeEvent(self, event):
+        print("[窗口事件] 窗口关闭")
+        super().closeEvent(event)
         """关闭时执行智能备份"""
         self.perform_auto_backup()  # 使用新的备份方法
         
@@ -3787,17 +3953,36 @@ class TextManager(QMainWindow):
         event.accept()
 
 
+    def eventFilter(self, obj, event):
+        if obj == self.btn_new:
+            if event.type() == QEvent.MouseButtonPress:
+                print("[DEBUG] 鼠标按下事件捕获")
+            elif event.type() == QEvent.MouseButtonRelease:
+                print("[DEBUG] 鼠标释放事件捕获")
+        return super().eventFilter(obj, event)
 
 
 
 
 if __name__ == '__main__':
+    print("[主程序] 1. 应用启动")
     app = QApplication(sys.argv)
-    
-    # 设置全局字体
-    font = QFont('Microsoft YaHei', 10)
-    app.setFont(font)
-    
-    window = TextManager()
+
+    print("[主程序] 2. 创建窗口实例")
+    try:
+        # 设置全局字体
+        font = QFont('Microsoft YaHei', 10)
+        app.setFont(font)
+        
+        window = TextManager()
+        print("[主程序] 3. 窗口实例创建成功")
+    except Exception as e:
+        print(f"[主程序] 窗口创建失败: {str(e)}")
+        sys.exit(1)
+
+    print("[主程序] 4. 显示窗口")
     window.show()
+
+    print("[主程序] 5. 进入事件循环")
     sys.exit(app.exec_())
+    
